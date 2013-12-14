@@ -29,6 +29,7 @@ public class FieldInvoker implements Invoker {
         }
 
         try {
+            field.setAccessible(true);
             field.set(handler, argument);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Unable to apply value [" + argument + "] to handler [" + handler + "].", e);

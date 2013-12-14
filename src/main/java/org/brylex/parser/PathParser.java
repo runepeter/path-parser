@@ -176,22 +176,32 @@ public class PathParser {
     private Tree<Node> invokeStartElementHandlers(Tree<Node> parseTree, StartElement startElement) {
 
         String elementName = startElement.getName().getLocalPart();
-        parseTree = parseTree.getTree(new Node(elementName, NodeType.START_ELEMENT));
+        Tree<Node> subTree = parseTree.getTree(new Node(elementName, NodeType.START_ELEMENT));
 
-        parseTree.getHead().invoke(startElement);
+        if (subTree != null) {
 
-        return parseTree;
+            subTree.getHead().invoke(startElement);
+
+            return subTree;
+
+        } else {
+            return parseTree;
+        }
     }
 
     private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement) {
 
         String elementName = endElement.getName().getLocalPart();
-        parseTree = parseTree.getTree(new Node(elementName, NodeType.END_ELEMENT));
+        Tree<Node> subTree = parseTree.getTree(new Node(elementName, NodeType.END_ELEMENT));
 
-        parseTree.getHead().invoke(fieldValue);
-        parseTree.getHead().invoke(endElement);
+        if (subTree != null) {
+            subTree.getHead().invoke(fieldValue);
+            subTree.getHead().invoke(endElement);
 
-        return parseTree;
+            return subTree;
+        } else {
+            return parseTree;
+        }
     }
 
 }

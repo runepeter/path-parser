@@ -22,6 +22,7 @@ public class AppTest {
         String xml = "<xml>" +
                 "<child>A</child>" +
                 "<child>B</child>" +
+                "<sister>X</sister>" +
                 "<child>C</child>" +
                 "</xml>";
 
