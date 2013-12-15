@@ -3,8 +3,8 @@ package org.brylex.parser;
 import java.lang.reflect.Method;
 
 /**
-* Created by runepeter on 09.12.13.
-*/
+ * Created by runepeter on 09.12.13.
+ */
 public class MethodInvoker implements Invoker {
 
     private final Method method;

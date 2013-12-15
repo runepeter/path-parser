@@ -9,7 +9,7 @@ public class Node {
     private final NodeType type;
     private final Set<Invoker> invokers;
 
-    Node(String name, NodeType type) {
+    public Node(String name, NodeType type) {
         this.name = name;
         this.type = type;
         this.invokers = new HashSet<>();
@@ -23,6 +23,10 @@ public class Node {
         for (Invoker invoker : invokers) {
             invoker.invoke(argument);
         }
+    }
+
+    public Set<Invoker> getInvokers() {
+        return invokers;
     }
 
     @Override
