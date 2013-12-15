@@ -12,7 +12,9 @@ import javax.xml.stream.events.XMLEvent;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Set;
 import java.util.Stack;
 
 public class PathParser {
@@ -20,91 +22,81 @@ public class PathParser {
     private final Stack<StringBuilder> characterStack;
     private final Tree<Node> tree;
 
-    public PathParser(Object... handlers) {
+    public PathParser(Object handler) {
+        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler);
+    }
 
+    PathParser(Tree<Node> tree, Object handler) {
         this.characterStack = new Stack<>();
-        this.tree = new Tree<Node>(new Node("/", NodeType.START_DOCUMENT));
+        this.tree = tree;
 
-        for (Object handler : handlers) {
+        Method[] methods = handler.getClass().getDeclaredMethods();
+        for (Method method : methods) {
 
-            Method[] methods = handler.getClass().getDeclaredMethods();
-            for (Method method : methods) {
-
-                Path path = method.getAnnotation(Path.class);
-                if (path != null) {
-                    apply(path, method, handler);
-                }
+            Path path = method.getAnnotation(Path.class);
+            if (path != null) {
+                apply(path, method, handler);
             }
+        }
 
-            for (Field field : handler.getClass().getDeclaredFields()) {
+        for (Field field : handler.getClass().getDeclaredFields()) {
 
-                Path path = field.getAnnotation(Path.class);
-                if (path != null) {
-                    apply(path, field, handler);
-                }
+            Path path = field.getAnnotation(Path.class);
+            if (path != null) {
+                apply(path, field, handler);
             }
         }
     }
-
 
     private void apply(Path path, Field field, Object handler) {
 
         final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
-
-        Tree<Node> trunk = buildTrunk(nodes);
+        final Tree<Node> trunk = buildTrunk(nodes);
 
         Node node = new Node(leafNode, NodeType.END_ELEMENT);
-
-        Tree<Node> t = trunk.getTree(node);
-        if (t == null) {
-
-            node.add(new FieldInvoker(field, handler));
-
-            trunk.addLeaf(node);
-        } else {
-            t.getHead().add(new FieldInvoker(field, handler));
-        }
+        FieldInvoker invoker = new FieldInvoker(field, handler);
+        applyInvoker(trunk, node, invoker);
     }
 
     private void apply(Path path, Method method, Object handler) {
 
         final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
-
-        Tree<Node> trunk = buildTrunk(nodes);
+        final Tree<Node> trunk = buildTrunk(nodes);
 
         Class<?> parameterType = method.getParameterTypes()[0];
         if (StartElement.class.isAssignableFrom(parameterType)) {
 
             Node node = new Node(leafNode, NodeType.START_ELEMENT);
-
-            Tree<Node> t = trunk.getTree(node);
-            if (t == null) {
-
-                node.add(new MethodInvoker(method, handler));
-
-                trunk.addLeaf(node);
-            } else {
-                t.getHead().add(new MethodInvoker(method, handler));
-            }
+            MethodInvoker invoker = new MethodInvoker(method, handler);
+            applyInvoker(trunk, node, invoker);
 
         } else if (EndElement.class.isAssignableFrom(parameterType)) {
 
             Node node = new Node(leafNode, NodeType.END_ELEMENT);
-
-            Tree<Node> t = trunk.getTree(node);
-            if (t == null) {
-
-                node.add(new MethodInvoker(method, handler));
-
-                trunk.addLeaf(node);
-            } else {
-                t.getHead().add(new MethodInvoker(method, handler));
-            }
+            MethodInvoker invoker = new MethodInvoker(method, handler);
+            applyInvoker(trunk, node, invoker);
 
         } else {
-            System.err.println(parameterType);
+
+            Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
+            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType);
+            applyInvoker(trunk, createNode, createInstanceInvoker);
+
+            Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
+            Invoker subParserInvoker = new ApplySubParserInvoker(new MethodInvoker(method, handler), createInstanceInvoker);
+            applyInvoker(trunk, applyNode, subParserInvoker);
+        }
+    }
+
+    private void applyInvoker(Tree<Node> trunk, Node node, Invoker invoker) {
+        Tree<Node> t = trunk.getTree(node);
+        if (t == null) {
+            node.add(invoker);
+            trunk.addLeaf(node);
+        } else {
+            t.getHead().add(invoker);
         }
     }
 
@@ -128,17 +120,35 @@ public class PathParser {
         return parent;
     }
 
+    private XMLEventReader xmlEventReader;
+
     public void parse(XMLEventReader reader) {
+
+        this.xmlEventReader = reader;
 
         Tree<Node> parseTree = tree;
 
         try {
+
+            if (!reader.peek().isStartDocument()) {
+                parseTree = tree.getTree(new Node("/", NodeType.START_ELEMENT));
+            }
+
+            int balance = 0;
+
             while (reader.hasNext()) {
 
-                XMLEvent event = reader.nextEvent();
+                XMLEvent event = reader.peek();
+                if (event.getEventType() == XMLStreamConstants.END_ELEMENT && balance == 0) {
+                    return;
+                } else {
+                    reader.nextEvent();
+                }
 
                 switch (event.getEventType()) {
                     case XMLStreamConstants.START_ELEMENT:
+
+                        balance++;
 
                         characterStack.push(new StringBuilder());
 
@@ -146,6 +156,8 @@ public class PathParser {
                         break;
 
                     case XMLStreamConstants.END_ELEMENT:
+
+                        balance--;
 
                         StringBuilder stringBuilder = characterStack.pop();
 
@@ -180,7 +192,17 @@ public class PathParser {
 
         if (subTree != null) {
 
-            subTree.getHead().invoke(startElement);
+            Node head = subTree.getHead();
+
+            Set<Invoker> s = new HashSet<>();
+
+            for (Invoker invoker : head.getInvokers()) {
+                if (invoker instanceof CreateInstanceInvoker) {
+                    invoker.invoke(xmlEventReader);
+                } else {
+                    invoker.invoke(startElement);
+                }
+            }
 
             return subTree;
 
