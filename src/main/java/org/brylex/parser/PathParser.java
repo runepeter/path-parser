@@ -156,7 +156,9 @@ public class PathParser {
                         if (ignore == 0) {
                             Tree<Node> t = invokeStartElementHandlers(parseTree, event.asStartElement());
                             if (t == null) {
-                                ignore++;
+                                if (parseTree.getTree(new Node(event.asStartElement().getName().getLocalPart(), NodeType.END_ELEMENT)) == null) {
+                                    ignore++;
+                                }
                             } else {
                                 parseTree = t;
                             }
