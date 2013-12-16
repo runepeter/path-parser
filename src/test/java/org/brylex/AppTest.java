@@ -41,6 +41,30 @@ public class AppTest {
     }
 
     @Test
+    public void testSameElementNamesAtDifferentLevels() throws Exception {
+
+        String xml = "<xml>" +
+                "<child>A</child>" +
+                "<child>B</child>" +
+                "<sister>X</sister>" +
+                "<child>C</child>" +
+                "<pet><dog><child>Z</child></dog></pet>" +
+                "<child>D</child>" +
+                "</xml>";
+
+        TestParserHandler handler = new TestParserHandler();
+
+        try (Reader reader = new StringReader(xml)) {
+
+            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
+
+            new PathParser(handler).parse(xmlEventReader);
+        }
+
+        assertThat(handler.child).isEqualTo("D");
+    }
+
+    @Test
     public void testSubHandler() throws Exception {
 
         String xml = "<xml>" +

@@ -15,6 +15,10 @@ public class Node {
         this.invokers = new HashSet<>();
     }
 
+    public String getName() {
+        return name;
+    }
+
     public void add(Invoker invoker) {
         this.invokers.add(invoker);
     }
