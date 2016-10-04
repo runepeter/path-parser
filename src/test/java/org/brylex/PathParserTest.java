@@ -16,7 +16,7 @@ import java.util.List;
 
 import static org.fest.assertions.Assertions.assertThat;
 
-public class AppTest {
+public class PathParserTest {
 
     @Test
     public void testApp() throws Exception {
@@ -92,10 +92,39 @@ public class AppTest {
         assertThat(handler.children.get(3).grandchild).isEqualTo("C");
     }
 
+    @Test
+    public void matchAnnotation() throws Exception {
+
+        String xml = "<xml>" +
+                "<child>A</child>" +
+                "<food id='FRUIT'>Apple</food>" +
+                "<food id='BREAD'>Pain</food>" +
+                "</xml>";
+
+        TestParserHandler handler = new TestParserHandler();
+
+        try (Reader reader = new StringReader(xml)) {
+
+            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
+
+            new PathParser(handler).parse(xmlEventReader);
+        }
+
+        assertThat(handler.child).isEqualTo("A");
+        assertThat(handler.fruit).isEqualTo("Apple");
+        assertThat(handler.bread).isEqualTo("Pain");
+    }
+
     public static class TestParserHandler {
 
         @Path("/xml/child")
         public String child;
+
+        @Path("/xml/food[@id='FRUIT']")
+        public String fruit;
+
+        @Path("/xml/food[@id='BREAD']")
+        public String bread;
 
         @Path("/xml")
         public void handleXml(StartElement element) {

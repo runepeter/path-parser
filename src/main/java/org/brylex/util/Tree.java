@@ -1,5 +1,6 @@
 package org.brylex.util;
 
+import javax.xml.stream.events.EndElement;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -52,6 +53,15 @@ public class Tree<T> {
 
     public Tree<T> getTree(T element) {
         return locate.get(element);
+    }
+
+    public Tree<T> getTree(EndElement endElement) {
+
+        locate.forEach((a, b) -> {
+            System.out.println(b);
+        });
+
+        return null;
     }
 
     public Tree<T> getParent() {

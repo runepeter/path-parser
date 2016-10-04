@@ -128,6 +128,8 @@ public class PathParser {
 
         Tree<Node> parseTree = tree;
 
+        final Stack<StartElement> stack = new Stack<>();
+
         try {
 
             if (!reader.peek().isStartDocument()) {
@@ -149,6 +151,8 @@ public class PathParser {
                 switch (event.getEventType()) {
                     case XMLStreamConstants.START_ELEMENT:
 
+                        stack.push(event.asStartElement());
+
                         balance++;
 
                         characterStack.push(new StringBuilder());
@@ -156,9 +160,12 @@ public class PathParser {
                         if (ignore == 0) {
                             Tree<Node> t = invokeStartElementHandlers(parseTree, event.asStartElement());
                             if (t == null) {
-                                if (parseTree.getTree(new Node(event.asStartElement().getName().getLocalPart(), NodeType.END_ELEMENT)) == null) {
+
+                                Node node = new Node(event);
+                                if (parseTree.getTree(node) == null) {
                                     ignore++;
                                 }
+
                             } else {
                                 parseTree = t;
                             }
@@ -170,6 +177,11 @@ public class PathParser {
 
                     case XMLStreamConstants.END_ELEMENT:
 
+                        StartElement startElement = stack.pop();
+                        if (!startElement.getName().equals(event.asEndElement().getName())) {
+                            throw new IllegalStateException("Unexpected END element [" + event.asEndElement() + "].");
+                        }
+
                         balance--;
 
                         StringBuilder stringBuilder = characterStack.pop();
@@ -179,7 +191,7 @@ public class PathParser {
                             ignore--;
 
                         }  else {
-                            Tree<Node> t = invokeFieldHandlers(parseTree, stringBuilder.toString(), event.asEndElement());
+                            Tree<Node> t = invokeFieldHandlers(parseTree, stringBuilder.toString(), event.asEndElement(), startElement);
                             parseTree = t != null ? t : parseTree;
                         }
 
@@ -230,10 +242,9 @@ public class PathParser {
         return null;
     }
 
-    private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement) {
+    private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement, StartElement startElement) {
 
-        String elementName = endElement.getName().getLocalPart();
-        Tree<Node> subTree = parseTree.getTree(new Node(elementName, NodeType.END_ELEMENT));
+        Tree<Node> subTree = parseTree.getTree(new Node(startElement));
 
         if (subTree != null) {
             subTree.getHead().invoke(fieldValue);
