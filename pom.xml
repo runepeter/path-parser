@@ -5,7 +5,7 @@
 
     <groupId>org.brylex</groupId>
     <artifactId>path-parser</artifactId>
-    <version>1</version>
+    <version>2-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>path-parser</name>
@@ -88,7 +88,7 @@
         <connection>scm:git:git://github.com/runepeter/path-parser.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/runepeter/path-parser.git</developerConnection>
         <url>https://github.com/runepeter/path-parser</url>
-      <tag>path-parser-1</tag>
+      <tag>HEAD</tag>
   </scm>
 
 </project>
