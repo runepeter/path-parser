@@ -1,48 +1,26 @@
 package org.brylex.util;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class Tree<T> {
 
-    private T head;
-
-    private ArrayList<Tree<T>> leafs = new ArrayList<Tree<T>>();
-
-    private Tree<T> parent = null;
-
-    private HashMap<T, Tree<T>> locate = new HashMap<T, Tree<T>>();
+    private final T head;
+    private final List<Tree<T>> leafs = new ArrayList<>();
+    private Map<T, Tree<T>> locate = new HashMap<>();
 
     public Tree(T head) {
         this.head = head;
         locate.put(head, this);
     }
 
-    public void addLeaf(T root, T leaf) {
-        if (locate.containsKey(root)) {
-            locate.get(root).addLeaf(leaf);
-        } else {
-            addLeaf(root).addLeaf(leaf);
-        }
-    }
-
     public Tree<T> addLeaf(T leaf) {
-        Tree<T> t = new Tree<T>(leaf);
+        Tree<T> t = new Tree<>(leaf);
         leafs.add(t);
-        t.parent = this;
         t.locate = this.locate;
         locate.put(leaf, t);
-        return t;
-    }
-
-    public Tree<T> setAsParent(T parentRoot) {
-        Tree<T> t = new Tree<T>(parentRoot);
-        t.leafs.add(this);
-        this.parent = t;
-        t.locate = this.locate;
-        t.locate.put(head, this);
-        t.locate.put(parentRoot, t);
         return t;
     }
 
@@ -54,51 +32,18 @@ public class Tree<T> {
         return locate.get(element);
     }
 
-    public Tree<T> getParent() {
-        return parent;
-    }
-
-    public Collection<T> getSuccessors(T root) {
-        Collection<T> successors = new ArrayList<T>();
-        Tree<T> tree = getTree(root);
-        if (null != tree) {
-            for (Tree<T> leaf : tree.leafs) {
-                successors.add(leaf.head);
-            }
-        }
-        return successors;
-    }
-
-    public Collection<Tree<T>> getSubTrees() {
-        return leafs;
-    }
-
-    public static <T> Collection<T> getSuccessors(T of, Collection<Tree<T>> in) {
-        for (Tree<T> tree : in) {
-            if (tree.locate.containsKey(of)) {
-                return tree.getSuccessors(of);
-            }
-        }
-        return new ArrayList<T>();
-    }
-
     @Override
     public String toString() {
-        return printTree(0);
+        StringBuilder builder = new StringBuilder();
+        appendTo(builder, 0);
+        return builder.toString();
     }
 
-    private static final int indent = 2;
-
-    private String printTree(int increment) {
-        String s = "";
-        String inc = "";
-        for (int i = 0; i < increment; ++i) {
-            inc = inc + " ";
-        }
-        s = inc + head;
+    private void appendTo(StringBuilder builder, int indent) {
+        builder.append(" ".repeat(indent)).append(head);
         for (Tree<T> child : leafs) {
-            s += "\n" + child.printTree(increment + indent);
+            builder.append('\n');
+            child.appendTo(builder, indent + 2);
         }
-        return s;
     }
 }
