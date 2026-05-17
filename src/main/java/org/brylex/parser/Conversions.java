@@ -36,6 +36,44 @@ final class Conversions {
                 || targetType.isEnum();
     }
 
+    @FunctionalInterface
+    interface Converter {
+        Object convert(String text);
+    }
+
+    static Converter converterFor(Class<?> targetType) {
+        if (targetType == String.class || targetType == CharSequence.class || targetType == Object.class) {
+            return text -> text;
+        }
+        if (targetType == int.class || targetType == Integer.class) return text -> Integer.valueOf(text.trim());
+        if (targetType == long.class || targetType == Long.class) return text -> Long.valueOf(text.trim());
+        if (targetType == short.class || targetType == Short.class) return text -> Short.valueOf(text.trim());
+        if (targetType == byte.class || targetType == Byte.class) return text -> Byte.valueOf(text.trim());
+        if (targetType == double.class || targetType == Double.class) return text -> Double.valueOf(text.trim());
+        if (targetType == float.class || targetType == Float.class) return text -> Float.valueOf(text.trim());
+        if (targetType == boolean.class || targetType == Boolean.class) return text -> Boolean.valueOf(text.trim());
+        if (targetType == char.class || targetType == Character.class) {
+            return text -> {
+                if (text.length() != 1) {
+                    throw new IllegalArgumentException("Cannot convert [" + text + "] to char.");
+                }
+                return text.charAt(0);
+            };
+        }
+        if (targetType == BigInteger.class) return text -> new BigInteger(text.trim());
+        if (targetType == BigDecimal.class) return text -> new BigDecimal(text.trim());
+        if (targetType == LocalDate.class) return text -> LocalDate.parse(text.trim());
+        if (targetType == LocalDateTime.class) return text -> LocalDateTime.parse(text.trim());
+        if (targetType == Instant.class) return text -> Instant.parse(text.trim());
+        if (targetType == UUID.class) return text -> UUID.fromString(text.trim());
+        if (targetType.isEnum()) {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Class<? extends Enum> enumType = (Class<? extends Enum>) targetType;
+            return text -> Enum.valueOf(enumType, text.trim());
+        }
+        return null;
+    }
+
     static Object convert(String text, Class<?> targetType) {
         if (text == null) {
             return null;

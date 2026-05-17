@@ -16,6 +16,8 @@ public final class FieldInvoker implements Invoker {
     private final boolean collection;
     private final Class<?> elementType;
 
+    private final Conversions.Converter converter;
+
     public FieldInvoker(Field field, Object handler) {
         this.field = field;
         this.handler = handler;
@@ -25,9 +27,11 @@ public final class FieldInvoker implements Invoker {
         if (Collection.class.isAssignableFrom(fieldType)) {
             this.collection = true;
             this.elementType = resolveElementType(field);
+            this.converter = Conversions.converterFor(elementType);
         } else {
             this.collection = false;
             this.elementType = null;
+            this.converter = Conversions.converterFor(fieldType);
         }
     }
 
@@ -57,10 +61,9 @@ public final class FieldInvoker implements Invoker {
 
         if (collection) {
             if (argument instanceof String text) {
-                Object element = Conversions.convert(text, elementType);
-                if (element != null) {
-                    addToCollection(element);
-                }
+                if (converter == null) return;
+                Object element = converter.convert(text);
+                addToCollection(element);
                 return;
             }
             if (elementType.isInstance(argument)) {
@@ -70,11 +73,8 @@ public final class FieldInvoker implements Invoker {
         }
 
         if (argument instanceof String text) {
-            Object value = Conversions.convert(text, fieldType);
-            if (value == null) {
-                return;
-            }
-            set(value);
+            if (converter == null) return;
+            set(converter.convert(text));
             return;
         }
 

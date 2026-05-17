@@ -1,7 +1,5 @@
 package org.brylex.parser;
 
-import org.brylex.parser.annotation.Path;
-
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
@@ -22,7 +20,15 @@ public class PathParser {
 
     private static final Pattern FILTER_PATTERN = Pattern.compile("(.+)\\[@(.+)=['\"]?([^'\"\\]]+)['\"]?\\]");
     private static final XMLInputFactory XML_INPUT_FACTORY = XMLInputFactory.newInstance();
-    private static final String[] EMPTY_STRINGS = new String[0];
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, String[]> SEGMENT_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final ClassValue<HandlerSpec> SPECS = new ClassValue<>() {
+        @Override
+        protected HandlerSpec computeValue(Class<?> type) {
+            return HandlerSpec.compile(type);
+        }
+    };
 
     private final ParseNode root;
     private final Function<Class<?>, Object> factory;
@@ -39,23 +45,11 @@ public class PathParser {
         this.root = root;
         this.factory = factory;
 
-        for (Method method : handler.getClass().getDeclaredMethods()) {
-            Path path = method.getAnnotation(Path.class);
-            if (path != null) {
-                apply(path, method, handler);
-            }
-        }
-
-        for (Field field : handler.getClass().getDeclaredFields()) {
-            Path path = field.getAnnotation(Path.class);
-            if (path != null) {
-                apply(path, field, handler);
-            }
-        }
+        SPECS.get(handler.getClass()).apply(this, handler);
     }
 
-    private void apply(Path path, Field field, Object handler) {
-        String[] segments = splitPath(path.value());
+    void applyField(Field field, String path, Object handler) {
+        String[] segments = splitPath(path);
         int leafIndex = segments.length - 1;
         String leaf = segments[leafIndex];
 
@@ -81,8 +75,8 @@ public class PathParser {
         leafNode.needsText = true;
     }
 
-    private void apply(Path path, Method method, Object handler) {
-        String[] segments = splitPath(path.value());
+    void applyMethod(Method method, String path, Object handler) {
+        String[] segments = splitPath(path);
         int leafIndex = segments.length - 1;
         String leaf = segments[leafIndex];
         ParseNode trunk = buildTrunk(segments, leafIndex);
@@ -110,7 +104,7 @@ public class PathParser {
     }
 
     private static String[] splitPath(String value) {
-        return value.split("/");
+        return SEGMENT_CACHE.computeIfAbsent(value, v -> v.split("/"));
     }
 
     private ParseNode buildTrunk(String[] segments, int endIndex) {
@@ -168,10 +162,9 @@ public class PathParser {
     private void parseLoop(XMLStreamReader reader) throws XMLStreamException {
         ParseNode parseTree = root;
 
-        int stackCap = 16;
+        int stackCap = 8;
         ParseNode[] parseTreeStack = new ParseNode[stackCap];
         StringBuilder[] charStack = new StringBuilder[stackCap];
-        String[] nameStack = new String[stackCap];
 
         int depth = 0;
         int ignore = 0;
@@ -194,15 +187,15 @@ public class PathParser {
                     attrValues[i] = reader.getAttributeValue(i);
                 }
 
+                if (depth >= stackCap) {
+                    int newCap = stackCap * 2;
+                    parseTreeStack = java.util.Arrays.copyOf(parseTreeStack, newCap);
+                    charStack = java.util.Arrays.copyOf(charStack, newCap);
+                    stackCap = newCap;
+                }
+
                 if (ignore > 0) {
                     ignore++;
-                    if (depth >= stackCap) {
-                        stackCap = grow(stackCap);
-                        parseTreeStack = grow(parseTreeStack, stackCap);
-                        charStack = grow(charStack, stackCap);
-                        nameStack = grow(nameStack, stackCap);
-                    }
-                    nameStack[depth] = name;
                     depth++;
                     continue;
                 }
@@ -210,13 +203,6 @@ public class PathParser {
                 ParseNode child = parseTree.lookupChild(name, attrCount, attrNames, attrValues);
                 if (child == null) {
                     ignore++;
-                    if (depth >= stackCap) {
-                        stackCap = grow(stackCap);
-                        parseTreeStack = grow(parseTreeStack, stackCap);
-                        charStack = grow(charStack, stackCap);
-                        nameStack = grow(nameStack, stackCap);
-                    }
-                    nameStack[depth] = name;
                     depth++;
                     continue;
                 }
@@ -228,15 +214,15 @@ public class PathParser {
                     continue;
                 }
 
-                if (depth >= stackCap) {
-                    stackCap = grow(stackCap);
-                    parseTreeStack = grow(parseTreeStack, stackCap);
-                    charStack = grow(charStack, stackCap);
-                    nameStack = grow(nameStack, stackCap);
-                }
                 parseTreeStack[depth] = parseTree;
-                charStack[depth] = null;
-                nameStack[depth] = name;
+                if (child.needsText) {
+                    StringBuilder sb = charStack[depth];
+                    if (sb == null) {
+                        charStack[depth] = new StringBuilder(32);
+                    } else {
+                        sb.setLength(0);
+                    }
+                }
                 parseTree = child;
                 depth++;
 
@@ -249,19 +235,13 @@ public class PathParser {
                     ignore--;
                     continue;
                 }
-                invokeEndHandlers(parseTree, charStack[depth]);
-                charStack[depth] = null;
+                StringBuilder text = parseTree.needsText ? charStack[depth] : null;
+                invokeEndHandlers(parseTree, text);
                 parseTree = parseTreeStack[depth];
 
             } else if (type == XMLStreamConstants.CHARACTERS || type == XMLStreamConstants.CDATA || type == XMLStreamConstants.SPACE) {
                 if (depth > 0 && ignore == 0 && parseTree.needsText) {
-                    int idx = depth - 1;
-                    StringBuilder sb = charStack[idx];
-                    if (sb == null) {
-                        sb = new StringBuilder();
-                        charStack[idx] = sb;
-                    }
-                    sb.append(reader.getTextCharacters(), reader.getTextStart(), reader.getTextLength());
+                    charStack[depth - 1].append(reader.getTextCharacters(), reader.getTextStart(), reader.getTextLength());
                 }
             }
         }
