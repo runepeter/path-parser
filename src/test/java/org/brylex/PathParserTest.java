@@ -3,7 +3,7 @@ package org.brylex;
 
 import org.brylex.parser.PathParser;
 import org.brylex.parser.annotation.Path;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLInputFactory;
