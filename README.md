@@ -1,7 +1,7 @@
 # path-parser
 
-StAX-basert XML-parser for Java som mapper elementer og tekstinnhold til felt og
-metoder via xpath-lignende uttrykk i `@Path`-annotasjonen.
+StAX-basert XML-parser for Java som mapper elementer, attributter og tekstinnhold
+til felt og metoder via xpath-lignende uttrykk i `@Path`-annotasjonen.
 
 ## Avhengighet
 
@@ -46,6 +46,63 @@ try (Reader reader = new StringReader(xml)) {
 }
 ```
 
+## Funksjoner
+
+### Type-konvertering
+
+Felt og metode-parametere konverteres automatisk fra tekstinnhold til mål-typen.
+Støttede typer: `String`, alle primitive typer og wrappere (`int`/`Integer`,
+`long`, `double`, `boolean`, …), `BigInteger`, `BigDecimal`, `LocalDate`,
+`LocalDateTime`, `Instant`, `UUID`, samt vilkårlige `enum`-typer.
+
+```java
+@Path("/order/quantity")  int quantity;
+@Path("/order/price")     BigDecimal price;
+@Path("/order/created")   LocalDate created;
+@Path("/order/status")    Status status;          // enum
+@Path("/order/uuid")      UUID id;
+```
+
+Det samme gjelder metode-parametere:
+
+```java
+@Path("/order/quantity")
+public void onQuantity(int qty) { ... }
+```
+
+### Attributt-mapping
+
+Bruk `@`-prefiks på siste path-segment for å lese et attributt:
+
+```java
+@Path("/order/@id")              String orderId;
+@Path("/order/customer/@type")   String customerType;
+@Path("/order/@total")           int total;          // konverteres
+```
+
+### Filtrering på attributt
+
+Bruk `[@attr='value']` for å matche bare elementer med en spesifikk attributtverdi:
+
+```java
+@Path("/menu/food[@id='FRUIT']") String fruit;
+@Path("/menu/food[@id='BREAD']") String bread;
+```
+
+### Collections
+
+Repeterte elementer kan samles i `List`, `Set` eller `Queue`:
+
+```java
+@Path("/items/item") List<String>  items;
+@Path("/prices/p")   List<BigDecimal> prices;     // konvertering pr. element
+@Path("/tags/tag")   Set<String>   tags;
+```
+
+Hvis feltet er null initialiseres samlingen automatisk
+(`ArrayList`, `LinkedHashSet`, eller `ArrayDeque` etter målets type). Du kan
+også pre-initialisere selv.
+
 ### Sub-parsers for nestede typer
 
 For elementer som mapper til komplekse objekter, ta inn handler-typen som
@@ -69,23 +126,31 @@ public class Item {
     public String sku;
 
     @Path("/price")
-    public String price;
+    public BigDecimal price;
 }
 ```
 
-### Attributt-matching
+### Custom instans-fabrikker
 
-Bruk `[@attr='value']`-syntaks for å filtrere på attributt:
+Gi en `Function<Class<?>, Object>` for å overstyre hvordan sub-handlere
+opprettes — nyttig for DI-rammeverk eller tester:
 
 ```java
-@Path("/menu/food[@id='FRUIT']")
-public String fruit;
+new PathParser(handler, type -> injector.getInstance(type)).parse(events);
 ```
+
+Standard er kall til `getDeclaredConstructor().newInstance()`.
 
 ## Bygg
 
 ```sh
 mvn verify
+```
+
+Release til Maven Central:
+
+```sh
+mvn -Prelease deploy
 ```
 
 ## Lisens
