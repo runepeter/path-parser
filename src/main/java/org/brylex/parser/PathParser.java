@@ -14,7 +14,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
-import java.util.LinkedList;
 
 public class PathParser {
 
@@ -49,7 +48,7 @@ public class PathParser {
 
     private void apply(Path path, Field field, Object handler) {
 
-        final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
+        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
         final Tree<Node> trunk = buildTrunk(nodes);
 
@@ -60,7 +59,7 @@ public class PathParser {
 
     private void apply(Path path, Method method, Object handler) {
 
-        final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
+        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
         final Tree<Node> trunk = buildTrunk(nodes);
 
@@ -99,7 +98,7 @@ public class PathParser {
         }
     }
 
-    private Tree<Node> buildTrunk(LinkedList<String> nodes) {
+    private Tree<Node> buildTrunk(Deque<String> nodes) {
         Tree<Node> parent = tree;
         for (String step : nodes) {
 
