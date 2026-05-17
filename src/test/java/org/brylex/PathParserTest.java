@@ -21,12 +21,13 @@ public class PathParserTest {
     @Test
     public void testApp() throws Exception {
 
-        String xml = "<xml>" +
-                "<child>A</child>" +
-                "<child>B</child>" +
-                "<sister>X</sister>" +
-                "<child>C</child>" +
-                "</xml>";
+        String xml = """
+                <xml>\
+                <child>A</child>\
+                <child>B</child>\
+                <sister>X</sister>\
+                <child>C</child>\
+                </xml>""";
 
         TestParserHandler handler = new TestParserHandler();
 
@@ -43,14 +44,15 @@ public class PathParserTest {
     @Test
     public void testSameElementNamesAtDifferentLevels() throws Exception {
 
-        String xml = "<xml>" +
-                "<child>A</child>" +
-                "<child>B</child>" +
-                "<sister>X</sister>" +
-                "<child>C</child>" +
-                "<pet><dog><child>Z</child></dog></pet>" +
-                "<child>D</child>" +
-                "</xml>";
+        String xml = """
+                <xml>\
+                <child>A</child>\
+                <child>B</child>\
+                <sister>X</sister>\
+                <child>C</child>\
+                <pet><dog><child>Z</child></dog></pet>\
+                <child>D</child>\
+                </xml>""";
 
         TestParserHandler handler = new TestParserHandler();
 
@@ -67,13 +69,14 @@ public class PathParserTest {
     @Test
     public void testSubHandler() throws Exception {
 
-        String xml = "<xml>" +
-                "<child><grandchild>A</grandchild></child>" +
-                "<child><grandchild>B</grandchild></child>" +
-                "<child><uncle>X</uncle></child>" +
-                "<child><grandchild>C</grandchild></child>" +
-                "<sister>X</sister>" +
-                "</xml>";
+        String xml = """
+                <xml>\
+                <child><grandchild>A</grandchild></child>\
+                <child><grandchild>B</grandchild></child>\
+                <child><uncle>X</uncle></child>\
+                <child><grandchild>C</grandchild></child>\
+                <sister>X</sister>\
+                </xml>""";
 
         TestRootHandler handler = new TestRootHandler();
 
@@ -95,11 +98,12 @@ public class PathParserTest {
     @Test
     public void matchAnnotation() throws Exception {
 
-        String xml = "<xml>" +
-                "<child>A</child>" +
-                "<food id='FRUIT'>Apple</food>" +
-                "<food id='BREAD'>Pain</food>" +
-                "</xml>";
+        String xml = """
+                <xml>\
+                <child>A</child>\
+                <food id='FRUIT'>Apple</food>\
+                <food id='BREAD'>Pain</food>\
+                </xml>""";
 
         TestParserHandler handler = new TestParserHandler();
 

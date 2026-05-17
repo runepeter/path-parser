@@ -2,10 +2,7 @@ package org.brylex.parser;
 
 import java.lang.reflect.Method;
 
-/**
- * Created by runepeter on 09.12.13.
- */
-public class MethodInvoker implements Invoker {
+public final class MethodInvoker implements Invoker {
 
     private final Method method;
     private final Object handler;
@@ -38,14 +35,8 @@ public class MethodInvoker implements Invoker {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof MethodInvoker)) return false;
-
-        MethodInvoker that = (MethodInvoker) o;
-
-        if (!handler.equals(that.handler)) return false;
-        if (!method.equals(that.method)) return false;
-
-        return true;
+        if (!(o instanceof MethodInvoker that)) return false;
+        return method.equals(that.method) && handler.equals(that.handler);
     }
 
     @Override

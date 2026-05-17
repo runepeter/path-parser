@@ -2,7 +2,7 @@ package org.brylex.parser;
 
 import javax.xml.stream.events.EndElement;
 
-public class ApplySubParserInvoker implements Invoker {
+public final class ApplySubParserInvoker implements Invoker {
 
     private final MethodInvoker methodInvoker;
     private final CreateInstanceInvoker createInstanceInvoker;
