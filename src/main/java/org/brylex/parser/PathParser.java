@@ -57,8 +57,15 @@ public class PathParser {
 
         final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
-        final Tree<Node> trunk = buildTrunk(nodes);
 
+        if (leafNode.startsWith("@")) {
+            String attributeName = leafNode.substring(1);
+            final Tree<Node> trunk = buildTrunk(nodes);
+            trunk.getHead().add(new AttributeInvoker(attributeName, field, handler));
+            return;
+        }
+
+        final Tree<Node> trunk = buildTrunk(nodes);
         Node node = new Node(leafNode, NodeType.END_ELEMENT);
         FieldInvoker invoker = new FieldInvoker(field, handler);
         applyInvoker(trunk, node, invoker);
