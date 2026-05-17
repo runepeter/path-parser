@@ -4,7 +4,7 @@ import org.brylex.util.Tree;
 
 import javax.xml.stream.XMLEventReader;
 
-public class CreateInstanceInvoker implements Invoker {
+public final class CreateInstanceInvoker implements Invoker {
 
     final Class<?> type;
 
@@ -18,7 +18,7 @@ public class CreateInstanceInvoker implements Invoker {
     public void invoke(Object argument) {
 
         try {
-            Object handler = type.newInstance(); // TODO rpbjo: support for different factories.
+            Object handler = type.getDeclaredConstructor().newInstance(); // TODO rpbjo: support for different factories.
 
             PathParser parser = new PathParser(new Tree<>(new Node("/", NodeType.START_ELEMENT)), handler);
             parser.parse((XMLEventReader) argument);

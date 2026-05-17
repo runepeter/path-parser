@@ -11,15 +11,13 @@ import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Set;
-import java.util.Stack;
+import java.util.Deque;
 
 public class PathParser {
 
-    private final Stack<StringBuilder> characterStack;
+    private final Deque<StringBuilder> characterStack;
     private final Tree<Node> tree;
 
     public PathParser(Object handler) {
@@ -27,7 +25,7 @@ public class PathParser {
     }
 
     PathParser(Tree<Node> tree, Object handler) {
-        this.characterStack = new Stack<>();
+        this.characterStack = new ArrayDeque<>();
         this.tree = tree;
 
         Method[] methods = handler.getClass().getDeclaredMethods();
@@ -50,7 +48,7 @@ public class PathParser {
 
     private void apply(Path path, Field field, Object handler) {
 
-        final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
+        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
         final Tree<Node> trunk = buildTrunk(nodes);
 
@@ -61,7 +59,7 @@ public class PathParser {
 
     private void apply(Path path, Method method, Object handler) {
 
-        final LinkedList<String> nodes = new LinkedList<>(Arrays.asList(path.value().split("/")));
+        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
         final Tree<Node> trunk = buildTrunk(nodes);
 
@@ -100,7 +98,7 @@ public class PathParser {
         }
     }
 
-    private Tree<Node> buildTrunk(LinkedList<String> nodes) {
+    private Tree<Node> buildTrunk(Deque<String> nodes) {
         Tree<Node> parent = tree;
         for (String step : nodes) {
 
@@ -128,7 +126,7 @@ public class PathParser {
 
         Tree<Node> parseTree = tree;
 
-        final Stack<StartElement> stack = new Stack<>();
+        final Deque<StartElement> stack = new ArrayDeque<>();
 
         try {
 
@@ -149,68 +147,49 @@ public class PathParser {
                 }
 
                 switch (event.getEventType()) {
-                    case XMLStreamConstants.START_ELEMENT:
-
-                        stack.push(event.asStartElement());
-
+                    case XMLStreamConstants.START_ELEMENT -> {
+                        StartElement startElement = event.asStartElement();
+                        stack.push(startElement);
                         balance++;
-
                         characterStack.push(new StringBuilder());
 
                         if (ignore == 0) {
-                            Tree<Node> t = invokeStartElementHandlers(parseTree, event.asStartElement());
+                            Tree<Node> t = invokeStartElementHandlers(parseTree, startElement);
                             if (t == null) {
-
                                 Node node = new Node(event);
                                 if (parseTree.getTree(node) == null) {
                                     ignore++;
                                 }
-
                             } else {
                                 parseTree = t;
                             }
                         } else {
                             ignore++;
                         }
-
-                        break;
-
-                    case XMLStreamConstants.END_ELEMENT:
-
+                    }
+                    case XMLStreamConstants.END_ELEMENT -> {
+                        EndElement endElement = event.asEndElement();
                         StartElement startElement = stack.pop();
-                        if (!startElement.getName().equals(event.asEndElement().getName())) {
-                            throw new IllegalStateException("Unexpected END element [" + event.asEndElement() + "].");
+                        if (!startElement.getName().equals(endElement.getName())) {
+                            throw new IllegalStateException("Unexpected END element [" + endElement + "].");
                         }
-
                         balance--;
-
                         StringBuilder stringBuilder = characterStack.pop();
 
                         if (ignore > 0) {
-
                             ignore--;
-
-                        }  else {
-                            Tree<Node> t = invokeFieldHandlers(parseTree, stringBuilder.toString(), event.asEndElement(), startElement);
+                        } else {
+                            Tree<Node> t = invokeFieldHandlers(parseTree, stringBuilder.toString(), endElement, startElement);
                             parseTree = t != null ? t : parseTree;
                         }
-
-                        break;
-
-                    case XMLStreamConstants.START_DOCUMENT:
-
-                        parseTree = tree.getTree(new Node("/", NodeType.START_DOCUMENT));
-
-                        break;
-                    case XMLStreamConstants.END_DOCUMENT:
-                        break;
-                    case XMLStreamConstants.CHARACTERS:
-
-                        characterStack.peek().append(event.asCharacters().getData());
-
-                        break;
-                    default:
-                        System.out.println("Event: [" + event + "]");
+                    }
+                    case XMLStreamConstants.START_DOCUMENT ->
+                            parseTree = tree.getTree(new Node("/", NodeType.START_DOCUMENT));
+                    case XMLStreamConstants.END_DOCUMENT -> {
+                    }
+                    case XMLStreamConstants.CHARACTERS ->
+                            characterStack.peek().append(event.asCharacters().getData());
+                    default -> System.out.println("Event: [" + event + "]");
                 }
             }
         } catch (XMLStreamException e) {

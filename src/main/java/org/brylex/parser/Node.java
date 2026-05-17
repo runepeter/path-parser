@@ -48,9 +48,9 @@ public class Node {
 
         this.name = element.getName().getLocalPart();
 
-        Iterator attributes = element.getAttributes();
+        Iterator<Attribute> attributes = element.getAttributes();
         if (attributes.hasNext()) {
-            Attribute attribute = (Attribute) attributes.next();
+            Attribute attribute = attributes.next();
             this.idAttribute = attribute.getName().getLocalPart();
             this.idValue = attribute.getValue();
         } else {

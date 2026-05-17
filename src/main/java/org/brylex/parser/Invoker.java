@@ -1,5 +1,5 @@
 package org.brylex.parser;
 
-public interface Invoker {
+public sealed interface Invoker permits FieldInvoker, MethodInvoker, CreateInstanceInvoker, ApplySubParserInvoker {
     void invoke(Object argument);
 }

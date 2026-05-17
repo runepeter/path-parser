@@ -2,10 +2,7 @@ package org.brylex.parser;
 
 import java.lang.reflect.Field;
 
-/**
- * Created by runepeter on 09.12.13.
- */
-public class FieldInvoker implements Invoker {
+public final class FieldInvoker implements Invoker {
 
     private final Field field;
     private final Object handler;
@@ -39,14 +36,8 @@ public class FieldInvoker implements Invoker {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof FieldInvoker)) return false;
-
-        FieldInvoker that = (FieldInvoker) o;
-
-        if (!field.equals(that.field)) return false;
-        if (!handler.equals(that.handler)) return false;
-
-        return true;
+        if (!(o instanceof FieldInvoker that)) return false;
+        return field.equals(that.field) && handler.equals(that.handler);
     }
 
     @Override
