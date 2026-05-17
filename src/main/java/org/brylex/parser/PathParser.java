@@ -6,6 +6,7 @@ import org.brylex.util.Tree;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
@@ -14,6 +15,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.function.Function;
 
 public class PathParser {
@@ -170,8 +172,7 @@ public class PathParser {
                         if (ignore == 0) {
                             Tree<Node> t = invokeStartElementHandlers(parseTree, startElement);
                             if (t == null) {
-                                Node node = new Node(event);
-                                if (parseTree.getTree(node) == null) {
+                                if (lookupChild(parseTree, startElement, NodeType.END_ELEMENT) == null) {
                                     ignore++;
                                 }
                             } else {
@@ -213,8 +214,7 @@ public class PathParser {
 
     private Tree<Node> invokeStartElementHandlers(Tree<Node> parseTree, StartElement startElement) {
 
-        String elementName = startElement.getName().getLocalPart();
-        Tree<Node> subTree = parseTree.getTree(new Node(elementName, NodeType.START_ELEMENT));
+        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.START_ELEMENT);
 
         if (subTree != null) {
 
@@ -237,7 +237,7 @@ public class PathParser {
 
     private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement, StartElement startElement) {
 
-        Tree<Node> subTree = parseTree.getTree(new Node(startElement));
+        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.END_ELEMENT);
 
         if (subTree != null) {
             subTree.getHead().invoke(fieldValue);
@@ -247,6 +247,20 @@ public class PathParser {
         }
 
         return null;
+    }
+
+    private Tree<Node> lookupChild(Tree<Node> parseTree, StartElement startElement, NodeType type) {
+        String name = startElement.getName().getLocalPart();
+        Iterator<Attribute> attributes = startElement.getAttributes();
+        while (attributes.hasNext()) {
+            Attribute attribute = attributes.next();
+            Node candidate = new Node(name, type, attribute.getName().getLocalPart(), attribute.getValue());
+            Tree<Node> match = parseTree.getTree(candidate);
+            if (match != null) {
+                return match;
+            }
+        }
+        return parseTree.getTree(new Node(name, type));
     }
 
     private static Object defaultFactory(Class<?> type) {

@@ -42,6 +42,14 @@ public final class Node {
         this.invokers = new HashSet<>();
     }
 
+    Node(String name, NodeType type, String idAttribute, String idValue) {
+        this.name = name;
+        this.type = type;
+        this.idAttribute = idAttribute;
+        this.idValue = idValue;
+        this.invokers = new HashSet<>();
+    }
+
     public Node(XMLEvent event) {
 
         StartElement element = event.asStartElement();
