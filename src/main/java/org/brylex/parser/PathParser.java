@@ -68,6 +68,20 @@ public class PathParser {
         }
 
         final Tree<Node> trunk = buildTrunk(nodes);
+
+        Class<?> elementType = FieldInvoker.elementTypeOf(field);
+        if (elementType != null && !Conversions.canConvert(elementType)) {
+
+            Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
+            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(elementType, factory);
+            applyInvoker(trunk, createNode, createInstanceInvoker);
+
+            Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
+            Invoker subParserInvoker = new ApplySubParserInvoker(new FieldInvoker(field, handler), createInstanceInvoker);
+            applyInvoker(trunk, applyNode, subParserInvoker);
+            return;
+        }
+
         Node node = new Node(leafNode, NodeType.END_ELEMENT);
         FieldInvoker invoker = new FieldInvoker(field, handler);
         applyInvoker(trunk, node, invoker);

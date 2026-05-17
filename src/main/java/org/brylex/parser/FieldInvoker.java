@@ -40,6 +40,13 @@ public final class FieldInvoker implements Invoker {
         return String.class;
     }
 
+    static Class<?> elementTypeOf(Field field) {
+        if (!Collection.class.isAssignableFrom(field.getType())) {
+            return null;
+        }
+        return resolveElementType(field);
+    }
+
     @Override
     public void invoke(Object argument) {
 
@@ -47,14 +54,21 @@ public final class FieldInvoker implements Invoker {
             throw new IllegalArgumentException("Cannot set field value to  [null].");
         }
 
-        if (argument instanceof String text) {
-            if (collection) {
+        if (collection) {
+            if (argument instanceof String text) {
                 Object element = Conversions.convert(text, elementType);
                 if (element != null) {
                     addToCollection(element);
                 }
                 return;
             }
+            if (elementType.isInstance(argument)) {
+                addToCollection(argument);
+            }
+            return;
+        }
+
+        if (argument instanceof String text) {
             Object value = Conversions.convert(text, fieldType);
             if (value == null) {
                 return;
