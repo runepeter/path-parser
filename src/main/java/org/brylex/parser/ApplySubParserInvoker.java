@@ -4,18 +4,18 @@ import javax.xml.stream.events.EndElement;
 
 public final class ApplySubParserInvoker implements Invoker {
 
-    private final MethodInvoker methodInvoker;
+    private final Invoker delegate;
     private final CreateInstanceInvoker createInstanceInvoker;
 
-    public ApplySubParserInvoker(MethodInvoker methodInvoker, CreateInstanceInvoker createInstanceInvoker) {
-        this.methodInvoker = methodInvoker;
+    public ApplySubParserInvoker(Invoker delegate, CreateInstanceInvoker createInstanceInvoker) {
+        this.delegate = delegate;
         this.createInstanceInvoker = createInstanceInvoker;
     }
 
     @Override
     public void invoke(Object argument) {
         if (argument instanceof EndElement) {
-            methodInvoker.invoke(createInstanceInvoker.value);
+            delegate.invoke(createInstanceInvoker.value);
         }
     }
 }

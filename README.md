@@ -130,6 +130,14 @@ public class Item {
 }
 ```
 
+Eller direkte som collection-felt — sub-handler-instanser opprettes og legges til:
+
+```java
+public class OrderHandler {
+    @Path("/order/item") List<Item> items;
+}
+```
+
 ### Custom instans-fabrikker
 
 Gi en `Function<Class<?>, Object>` for å overstyre hvordan sub-handlere
@@ -146,6 +154,8 @@ Standard er kall til `getDeclaredConstructor().newInstance()`.
 ```sh
 mvn verify
 ```
+
+Test-dekning genereres av JaCoCo og legges i `target/site/jacoco/`.
 
 Release til Maven Central:
 
