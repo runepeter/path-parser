@@ -12,6 +12,7 @@ public final class MethodInvoker implements Invoker {
         this.method = method;
         this.handler = handler;
         this.argumentType = method.getParameterTypes()[0];
+        method.setAccessible(true);
     }
 
     @Override

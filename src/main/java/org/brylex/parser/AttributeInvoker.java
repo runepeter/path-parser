@@ -17,6 +17,7 @@ public final class AttributeInvoker implements Invoker {
         this.field = field;
         this.handler = handler;
         this.fieldType = field.getType();
+        field.setAccessible(true);
     }
 
     @Override
@@ -33,7 +34,6 @@ public final class AttributeInvoker implements Invoker {
             return;
         }
         try {
-            field.setAccessible(true);
             field.set(handler, value);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Unable to apply attribute [" + attributeName + "] value [" + attribute.getValue() + "] to handler [" + handler + "].", e);

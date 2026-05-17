@@ -20,6 +20,7 @@ public final class FieldInvoker implements Invoker {
         this.field = field;
         this.handler = handler;
         this.fieldType = field.getType();
+        field.setAccessible(true);
 
         if (Collection.class.isAssignableFrom(fieldType)) {
             this.collection = true;
@@ -85,7 +86,6 @@ public final class FieldInvoker implements Invoker {
 
     private void set(Object value) {
         try {
-            field.setAccessible(true);
             field.set(handler, value);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Unable to apply value [" + value + "] to handler [" + handler + "].", e);
@@ -95,7 +95,6 @@ public final class FieldInvoker implements Invoker {
     @SuppressWarnings("unchecked")
     private void addToCollection(Object element) {
         try {
-            field.setAccessible(true);
             Collection<Object> existing = (Collection<Object>) field.get(handler);
             if (existing == null) {
                 existing = newCollection();

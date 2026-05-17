@@ -106,7 +106,11 @@ public final class Node {
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, type, idAttribute, idValue);
+        int h = name.hashCode();
+        h = 31 * h + type.hashCode();
+        h = 31 * h + (idAttribute == null ? 0 : idAttribute.hashCode());
+        h = 31 * h + (idValue == null ? 0 : idValue.hashCode());
+        return h;
     }
 
     @Override
