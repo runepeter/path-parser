@@ -92,6 +92,12 @@ public class PathParser {
             MethodInvoker invoker = new MethodInvoker(method, handler);
             applyInvoker(trunk, node, invoker);
 
+        } else if (Conversions.canConvert(parameterType)) {
+
+            Node node = new Node(leafNode, NodeType.END_ELEMENT);
+            MethodInvoker invoker = new MethodInvoker(method, handler);
+            applyInvoker(trunk, node, invoker);
+
         } else {
 
             Node createNode = new Node(leafNode, NodeType.START_ELEMENT);

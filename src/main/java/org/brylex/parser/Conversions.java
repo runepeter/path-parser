@@ -16,6 +16,26 @@ final class Conversions {
     private Conversions() {
     }
 
+    static boolean canConvert(Class<?> targetType) {
+        return targetType == String.class
+                || targetType == CharSequence.class
+                || targetType == int.class || targetType == Integer.class
+                || targetType == long.class || targetType == Long.class
+                || targetType == short.class || targetType == Short.class
+                || targetType == byte.class || targetType == Byte.class
+                || targetType == double.class || targetType == Double.class
+                || targetType == float.class || targetType == Float.class
+                || targetType == boolean.class || targetType == Boolean.class
+                || targetType == char.class || targetType == Character.class
+                || targetType == BigInteger.class
+                || targetType == BigDecimal.class
+                || targetType == LocalDate.class
+                || targetType == LocalDateTime.class
+                || targetType == Instant.class
+                || targetType == UUID.class
+                || targetType.isEnum();
+    }
+
     static Object convert(String text, Class<?> targetType) {
         if (text == null) {
             return null;
