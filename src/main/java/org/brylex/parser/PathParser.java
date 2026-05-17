@@ -6,6 +6,7 @@ import org.brylex.util.Tree;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
@@ -14,19 +15,27 @@ import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.Iterator;
+import java.util.function.Function;
 
 public class PathParser {
 
     private final Deque<StringBuilder> characterStack;
     private final Tree<Node> tree;
+    private final Function<Class<?>, Object> factory;
 
     public PathParser(Object handler) {
-        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler);
+        this(handler, PathParser::defaultFactory);
     }
 
-    PathParser(Tree<Node> tree, Object handler) {
+    public PathParser(Object handler, Function<Class<?>, Object> factory) {
+        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler, factory);
+    }
+
+    PathParser(Tree<Node> tree, Object handler, Function<Class<?>, Object> factory) {
         this.characterStack = new ArrayDeque<>();
         this.tree = tree;
+        this.factory = factory;
 
         Method[] methods = handler.getClass().getDeclaredMethods();
         for (Method method : methods) {
@@ -50,8 +59,15 @@ public class PathParser {
 
         final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
         final String leafNode = nodes.removeLast();
-        final Tree<Node> trunk = buildTrunk(nodes);
 
+        if (leafNode.startsWith("@")) {
+            String attributeName = leafNode.substring(1);
+            final Tree<Node> trunk = buildTrunk(nodes);
+            trunk.getHead().add(new AttributeInvoker(attributeName, field, handler));
+            return;
+        }
+
+        final Tree<Node> trunk = buildTrunk(nodes);
         Node node = new Node(leafNode, NodeType.END_ELEMENT);
         FieldInvoker invoker = new FieldInvoker(field, handler);
         applyInvoker(trunk, node, invoker);
@@ -76,10 +92,16 @@ public class PathParser {
             MethodInvoker invoker = new MethodInvoker(method, handler);
             applyInvoker(trunk, node, invoker);
 
+        } else if (Conversions.canConvert(parameterType)) {
+
+            Node node = new Node(leafNode, NodeType.END_ELEMENT);
+            MethodInvoker invoker = new MethodInvoker(method, handler);
+            applyInvoker(trunk, node, invoker);
+
         } else {
 
             Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
-            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType);
+            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType, factory);
             applyInvoker(trunk, createNode, createInstanceInvoker);
 
             Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
@@ -156,8 +178,7 @@ public class PathParser {
                         if (ignore == 0) {
                             Tree<Node> t = invokeStartElementHandlers(parseTree, startElement);
                             if (t == null) {
-                                Node node = new Node(event);
-                                if (parseTree.getTree(node) == null) {
+                                if (lookupChild(parseTree, startElement, NodeType.END_ELEMENT) == null) {
                                     ignore++;
                                 }
                             } else {
@@ -199,8 +220,7 @@ public class PathParser {
 
     private Tree<Node> invokeStartElementHandlers(Tree<Node> parseTree, StartElement startElement) {
 
-        String elementName = startElement.getName().getLocalPart();
-        Tree<Node> subTree = parseTree.getTree(new Node(elementName, NodeType.START_ELEMENT));
+        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.START_ELEMENT);
 
         if (subTree != null) {
 
@@ -223,7 +243,7 @@ public class PathParser {
 
     private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement, StartElement startElement) {
 
-        Tree<Node> subTree = parseTree.getTree(new Node(startElement));
+        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.END_ELEMENT);
 
         if (subTree != null) {
             subTree.getHead().invoke(fieldValue);
@@ -233,6 +253,28 @@ public class PathParser {
         }
 
         return null;
+    }
+
+    private Tree<Node> lookupChild(Tree<Node> parseTree, StartElement startElement, NodeType type) {
+        String name = startElement.getName().getLocalPart();
+        Iterator<Attribute> attributes = startElement.getAttributes();
+        while (attributes.hasNext()) {
+            Attribute attribute = attributes.next();
+            Node candidate = new Node(name, type, attribute.getName().getLocalPart(), attribute.getValue());
+            Tree<Node> match = parseTree.getTree(candidate);
+            if (match != null) {
+                return match;
+            }
+        }
+        return parseTree.getTree(new Node(name, type));
+    }
+
+    private static Object defaultFactory(Class<?> type) {
+        try {
+            return type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Unable to instantiate [" + type + "].", e);
+        }
     }
 
 }

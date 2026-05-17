@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class Node {
+public final class Node {
 
     private static final Pattern PATTERN = Pattern.compile("(.+)\\[.*@(.+).*\\]");
 
@@ -39,6 +39,14 @@ public class Node {
         }
 
         this.type = type;
+        this.invokers = new HashSet<>();
+    }
+
+    Node(String name, NodeType type, String idAttribute, String idValue) {
+        this.name = name;
+        this.type = type;
+        this.idAttribute = idAttribute;
+        this.idValue = idValue;
         this.invokers = new HashSet<>();
     }
 

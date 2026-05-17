@@ -21,14 +21,22 @@ public final class MethodInvoker implements Invoker {
             throw new IllegalArgumentException("Cannot invoke with [null] argument.");
         }
 
-        if (!argumentType.isAssignableFrom(argument.getClass())) {
+        Object value;
+        if (argumentType.isAssignableFrom(argument.getClass())) {
+            value = argument;
+        } else if (argument instanceof String text && Conversions.canConvert(argumentType)) {
+            value = Conversions.convert(text, argumentType);
+            if (value == null) {
+                return;
+            }
+        } else {
             return;
         }
 
         try {
-            method.invoke(handler, argument);
-        } catch (Exception e) {
-            throw new RuntimeException("Unable to invoke method [" + method + "] on handler [" + handler + "] using argument value [" + argument + "].", e);
+            method.invoke(handler, value);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Unable to invoke method [" + method + "] on handler [" + handler + "] using argument value [" + value + "].", e);
         }
     }
 
