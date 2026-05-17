@@ -15,6 +15,10 @@ public final class MethodInvoker implements Invoker {
         method.setAccessible(true);
     }
 
+    Class<?> argumentType() {
+        return argumentType;
+    }
+
     @Override
     public void invoke(Object argument) {
 

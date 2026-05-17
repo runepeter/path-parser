@@ -1,7 +1,5 @@
 package org.brylex.parser;
 
-import javax.xml.stream.events.EndElement;
-
 public final class ApplySubParserInvoker implements Invoker {
 
     private final Invoker delegate;
@@ -14,8 +12,10 @@ public final class ApplySubParserInvoker implements Invoker {
 
     @Override
     public void invoke(Object argument) {
-        if (argument instanceof EndElement) {
-            delegate.invoke(createInstanceInvoker.value);
-        }
+        fire();
+    }
+
+    void fire() {
+        delegate.invoke(createInstanceInvoker.value);
     }
 }

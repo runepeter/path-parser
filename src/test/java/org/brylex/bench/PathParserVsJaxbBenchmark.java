@@ -15,8 +15,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
@@ -36,23 +34,19 @@ public class PathParserVsJaxbBenchmark {
     public int itemsPerOrder;
 
     private byte[] xmlBytes;
-    private XMLInputFactory xmlInputFactory;
     private JAXBContext jaxbContext;
 
     @Setup
     public void setup() throws Exception {
         String xml = XmlFixture.orders(orders, itemsPerOrder);
         xmlBytes = xml.getBytes(StandardCharsets.UTF_8);
-        xmlInputFactory = XMLInputFactory.newInstance();
         jaxbContext = JAXBContext.newInstance(org.brylex.bench.jaxb.Orders.class);
     }
 
     @Benchmark
     public org.brylex.bench.pp.Orders pathParser() throws Exception {
         org.brylex.bench.pp.Orders root = new org.brylex.bench.pp.Orders();
-        XMLEventReader reader = xmlInputFactory.createXMLEventReader(new ByteArrayInputStream(xmlBytes));
-        new PathParser(root).parse(reader);
-        reader.close();
+        new PathParser(root).parse(new ByteArrayInputStream(xmlBytes));
         return root;
     }
 

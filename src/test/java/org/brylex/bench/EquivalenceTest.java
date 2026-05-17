@@ -5,8 +5,6 @@ import jakarta.xml.bind.Unmarshaller;
 import org.brylex.parser.PathParser;
 import org.junit.jupiter.api.Test;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -20,9 +18,7 @@ class EquivalenceTest {
         byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
 
         org.brylex.bench.pp.Orders pp = new org.brylex.bench.pp.Orders();
-        XMLEventReader reader = XMLInputFactory.newInstance().createXMLEventReader(new ByteArrayInputStream(bytes));
-        new PathParser(pp).parse(reader);
-        reader.close();
+        new PathParser(pp).parse(new ByteArrayInputStream(bytes));
 
         Unmarshaller unmarshaller = JAXBContext.newInstance(org.brylex.bench.jaxb.Orders.class).createUnmarshaller();
         org.brylex.bench.jaxb.Orders jaxb = (org.brylex.bench.jaxb.Orders) unmarshaller.unmarshal(new ByteArrayInputStream(bytes));
