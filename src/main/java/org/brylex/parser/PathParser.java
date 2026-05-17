@@ -14,19 +14,26 @@ import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.function.Function;
 
 public class PathParser {
 
     private final Deque<StringBuilder> characterStack;
     private final Tree<Node> tree;
+    private final Function<Class<?>, Object> factory;
 
     public PathParser(Object handler) {
-        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler);
+        this(handler, PathParser::defaultFactory);
     }
 
-    PathParser(Tree<Node> tree, Object handler) {
+    public PathParser(Object handler, Function<Class<?>, Object> factory) {
+        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler, factory);
+    }
+
+    PathParser(Tree<Node> tree, Object handler, Function<Class<?>, Object> factory) {
         this.characterStack = new ArrayDeque<>();
         this.tree = tree;
+        this.factory = factory;
 
         Method[] methods = handler.getClass().getDeclaredMethods();
         for (Method method : methods) {
@@ -79,7 +86,7 @@ public class PathParser {
         } else {
 
             Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
-            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType);
+            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType, factory);
             applyInvoker(trunk, createNode, createInstanceInvoker);
 
             Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
@@ -233,6 +240,14 @@ public class PathParser {
         }
 
         return null;
+    }
+
+    private static Object defaultFactory(Class<?> type) {
+        try {
+            return type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException("Unable to instantiate [" + type + "].", e);
+        }
     }
 
 }

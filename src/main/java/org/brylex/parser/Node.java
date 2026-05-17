@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class Node {
+public final class Node {
 
     private static final Pattern PATTERN = Pattern.compile("(.+)\\[.*@(.+).*\\]");
 

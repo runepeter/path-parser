@@ -27,7 +27,7 @@ public final class MethodInvoker implements Invoker {
 
         try {
             method.invoke(handler, argument);
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException e) {
             throw new RuntimeException("Unable to invoke method [" + method + "] on handler [" + handler + "] using argument value [" + argument + "].", e);
         }
     }
