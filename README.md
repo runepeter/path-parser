@@ -149,6 +149,21 @@ new PathParser(handler, type -> injector.getInstance(type)).parse(events);
 
 Standard er kall til `getDeclaredConstructor().newInstance()`.
 
+## Ytelse
+
+Internt brukes en cursor-basert StAX-parser (`XMLStreamReader`) med pre-
+kompilerte path-trær per handler-klasse. JMH-benchmarks vs Jakarta JAXB 4.0
+(samme XML, samme mappet objektmodell):
+
+| Antall orders | JAXB | path-parser | Forhold |
+|---:|---:|---:|---:|
+| 10   | 190 μs   | 96 μs   | **1.98x raskere** |
+| 100  | 1.40 ms  | 0.87 ms | **1.60x raskere** |
+| 1000 | 12.8 ms  | 8.8 ms  | **1.46x raskere** |
+
+Allokering per parse er ~9 MB vs JAXBs ~4 MB ved 1000 orders. Kjør selv via
+`org.brylex.bench.BenchmarkRunner`.
+
 ## Bygg
 
 ```sh

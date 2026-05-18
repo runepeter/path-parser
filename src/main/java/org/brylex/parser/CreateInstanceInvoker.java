@@ -1,29 +1,25 @@
 package org.brylex.parser;
 
-import org.brylex.util.Tree;
-
-import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLStreamReader;
+import java.util.function.Function;
 
 public final class CreateInstanceInvoker implements Invoker {
 
     private final Class<?> type;
-    private final java.util.function.Function<Class<?>, Object> factory;
+    private final Function<Class<?>, Object> factory;
 
     Object value;
 
-    public CreateInstanceInvoker(Class<?> type, java.util.function.Function<Class<?>, Object> factory) {
+    public CreateInstanceInvoker(Class<?> type, Function<Class<?>, Object> factory) {
         this.type = type;
         this.factory = factory;
     }
 
     @Override
     public void invoke(Object argument) {
-
         Object handler = factory.apply(type);
-
-        PathParser parser = new PathParser(new Tree<>(new Node("/", NodeType.START_ELEMENT)), handler, factory);
-        parser.parse((XMLEventReader) argument);
-
+        PathParser parser = new PathParser(new ParseNode("/", null, null), handler, factory);
+        parser.parse((XMLStreamReader) argument);
         this.value = handler;
     }
 }

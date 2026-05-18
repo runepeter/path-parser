@@ -17,26 +17,31 @@ public final class AttributeInvoker implements Invoker {
         this.field = field;
         this.handler = handler;
         this.fieldType = field.getType();
+        field.setAccessible(true);
     }
 
     @Override
     public void invoke(Object argument) {
-        if (!(argument instanceof StartElement startElement)) {
+        String raw;
+        if (argument instanceof AttributeSnapshot snapshot) {
+            raw = snapshot.value(attributeName);
+        } else if (argument instanceof StartElement startElement) {
+            Attribute attribute = startElement.getAttributeByName(new QName(attributeName));
+            raw = attribute == null ? null : attribute.getValue();
+        } else {
             return;
         }
-        Attribute attribute = startElement.getAttributeByName(new QName(attributeName));
-        if (attribute == null) {
+        if (raw == null) {
             return;
         }
-        Object value = Conversions.convert(attribute.getValue(), fieldType);
+        Object value = Conversions.convert(raw, fieldType);
         if (value == null) {
             return;
         }
         try {
-            field.setAccessible(true);
             field.set(handler, value);
         } catch (IllegalAccessException e) {
-            throw new RuntimeException("Unable to apply attribute [" + attributeName + "] value [" + attribute.getValue() + "] to handler [" + handler + "].", e);
+            throw new RuntimeException("Unable to apply attribute [" + attributeName + "] value [" + raw + "] to handler [" + handler + "].", e);
         }
     }
 

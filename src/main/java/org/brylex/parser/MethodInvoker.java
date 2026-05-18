@@ -8,10 +8,18 @@ public final class MethodInvoker implements Invoker {
     private final Object handler;
     private final Class<?> argumentType;
 
+    private final Conversions.Converter converter;
+
     public MethodInvoker(Method method, Object handler) {
         this.method = method;
         this.handler = handler;
         this.argumentType = method.getParameterTypes()[0];
+        this.converter = Conversions.canConvert(argumentType) ? Conversions.converterFor(argumentType) : null;
+        method.setAccessible(true);
+    }
+
+    Class<?> argumentType() {
+        return argumentType;
     }
 
     @Override
@@ -24,11 +32,8 @@ public final class MethodInvoker implements Invoker {
         Object value;
         if (argumentType.isAssignableFrom(argument.getClass())) {
             value = argument;
-        } else if (argument instanceof String text && Conversions.canConvert(argumentType)) {
-            value = Conversions.convert(text, argumentType);
-            if (value == null) {
-                return;
-            }
+        } else if (argument instanceof String text && converter != null) {
+            value = converter.convert(text);
         } else {
             return;
         }

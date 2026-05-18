@@ -3,8 +3,6 @@ package org.brylex.parser;
 import org.brylex.parser.annotation.Path;
 import org.junit.jupiter.api.Test;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -68,9 +66,9 @@ class FactoryTest {
 
     private static <T> T parse(String xml, T handler, java.util.function.Function<Class<?>, Object> factory) throws Exception {
         try (Reader reader = new StringReader(xml)) {
-            XMLEventReader events = XMLInputFactory.newInstance().createXMLEventReader(reader);
+            
             PathParser parser = factory == null ? new PathParser(handler) : new PathParser(handler, factory);
-            parser.parse(events);
+            parser.parse(reader);
         }
         return handler;
     }

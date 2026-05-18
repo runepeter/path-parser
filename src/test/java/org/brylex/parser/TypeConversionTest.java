@@ -3,8 +3,6 @@ package org.brylex.parser;
 import org.brylex.parser.annotation.Path;
 import org.junit.jupiter.api.Test;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
 import java.io.Reader;
 import java.io.StringReader;
 import java.math.BigDecimal;
@@ -65,8 +63,8 @@ class TypeConversionTest {
 
     private static <T> T parse(String xml, T handler) throws Exception {
         try (Reader reader = new StringReader(xml)) {
-            XMLEventReader events = XMLInputFactory.newInstance().createXMLEventReader(reader);
-            new PathParser(handler).parse(events);
+            
+            new PathParser(handler).parse(reader);
         }
         return handler;
     }

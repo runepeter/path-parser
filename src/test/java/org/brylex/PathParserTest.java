@@ -5,8 +5,6 @@ import org.brylex.parser.PathParser;
 import org.brylex.parser.annotation.Path;
 import org.junit.jupiter.api.Test;
 
-import javax.xml.stream.XMLEventReader;
-import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import java.io.Reader;
@@ -33,9 +31,8 @@ public class PathParserTest {
 
         try (Reader reader = new StringReader(xml)) {
 
-            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
 
-            new PathParser(handler).parse(xmlEventReader);
+            new PathParser(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("C");
@@ -58,9 +55,8 @@ public class PathParserTest {
 
         try (Reader reader = new StringReader(xml)) {
 
-            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
 
-            new PathParser(handler).parse(xmlEventReader);
+            new PathParser(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("D");
@@ -82,9 +78,8 @@ public class PathParserTest {
 
         try (Reader reader = new StringReader(xml)) {
 
-            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
 
-            new PathParser(handler).parse(xmlEventReader);
+            new PathParser(handler).parse(reader);
         }
 
         assertThat(handler.children).hasSize(4);
@@ -109,9 +104,8 @@ public class PathParserTest {
 
         try (Reader reader = new StringReader(xml)) {
 
-            XMLEventReader xmlEventReader = XMLInputFactory.newInstance().createXMLEventReader(reader);
 
-            new PathParser(handler).parse(xmlEventReader);
+            new PathParser(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("A");

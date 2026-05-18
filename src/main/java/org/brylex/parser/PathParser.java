@@ -1,27 +1,36 @@
 package org.brylex.parser;
 
-import org.brylex.parser.annotation.Path;
-import org.brylex.util.Tree;
-
-import javax.xml.stream.XMLEventReader;
+import javax.xml.namespace.QName;
+import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.events.Attribute;
+import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
+import java.io.InputStream;
+import java.io.Reader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.Iterator;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class PathParser {
 
-    private final Deque<StringBuilder> characterStack;
-    private final Tree<Node> tree;
+    private static final Pattern FILTER_PATTERN = Pattern.compile("(.+)\\[@(.+)=['\"]?([^'\"\\]]+)['\"]?\\]");
+    private static final XMLInputFactory XML_INPUT_FACTORY = XMLInputFactory.newInstance();
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, String[]> SEGMENT_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final ClassValue<HandlerSpec> SPECS = new ClassValue<>() {
+        @Override
+        protected HandlerSpec computeValue(Class<?> type) {
+            return HandlerSpec.compile(type);
+        }
+    };
+
+    private final ParseNode root;
     private final Function<Class<?>, Object> factory;
 
     public PathParser(Object handler) {
@@ -29,258 +38,296 @@ public class PathParser {
     }
 
     public PathParser(Object handler, Function<Class<?>, Object> factory) {
-        this(new Tree<Node>(new Node("/", NodeType.START_DOCUMENT)), handler, factory);
+        this(new ParseNode("/", null, null), handler, factory);
     }
 
-    PathParser(Tree<Node> tree, Object handler, Function<Class<?>, Object> factory) {
-        this.characterStack = new ArrayDeque<>();
-        this.tree = tree;
+    PathParser(ParseNode root, Object handler, Function<Class<?>, Object> factory) {
+        this.root = root;
         this.factory = factory;
 
-        Method[] methods = handler.getClass().getDeclaredMethods();
-        for (Method method : methods) {
-
-            Path path = method.getAnnotation(Path.class);
-            if (path != null) {
-                apply(path, method, handler);
-            }
-        }
-
-        for (Field field : handler.getClass().getDeclaredFields()) {
-
-            Path path = field.getAnnotation(Path.class);
-            if (path != null) {
-                apply(path, field, handler);
-            }
-        }
+        SPECS.get(handler.getClass()).apply(this, handler);
     }
 
-    private void apply(Path path, Field field, Object handler) {
+    void applyField(Field field, String path, Object handler) {
+        String[] segments = splitPath(path);
+        int leafIndex = segments.length - 1;
+        String leaf = segments[leafIndex];
 
-        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
-        final String leafNode = nodes.removeLast();
-
-        if (leafNode.startsWith("@")) {
-            String attributeName = leafNode.substring(1);
-            final Tree<Node> trunk = buildTrunk(nodes);
-            trunk.getHead().add(new AttributeInvoker(attributeName, field, handler));
+        if (leaf.startsWith("@")) {
+            ParseNode trunk = buildTrunk(segments, leafIndex);
+            trunk.startInvokers.add(new AttributeInvoker(leaf.substring(1), field, handler));
             return;
         }
 
-        final Tree<Node> trunk = buildTrunk(nodes);
+        ParseNode trunk = buildTrunk(segments, leafIndex);
 
         Class<?> elementType = FieldInvoker.elementTypeOf(field);
         if (elementType != null && !Conversions.canConvert(elementType)) {
-
-            Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
-            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(elementType, factory);
-            applyInvoker(trunk, createNode, createInstanceInvoker);
-
-            Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
-            Invoker subParserInvoker = new ApplySubParserInvoker(new FieldInvoker(field, handler), createInstanceInvoker);
-            applyInvoker(trunk, applyNode, subParserInvoker);
+            ParseNode leafNode = addChild(trunk, leaf);
+            CreateInstanceInvoker creator = new CreateInstanceInvoker(elementType, factory);
+            leafNode.startInvokers.add(creator);
+            leafNode.endInvokers.add(new ApplySubParserInvoker(new FieldInvoker(field, handler), creator));
             return;
         }
 
-        Node node = new Node(leafNode, NodeType.END_ELEMENT);
-        FieldInvoker invoker = new FieldInvoker(field, handler);
-        applyInvoker(trunk, node, invoker);
+        ParseNode leafNode = addChild(trunk, leaf);
+        leafNode.endInvokers.add(new FieldInvoker(field, handler));
+        leafNode.needsText = true;
     }
 
-    private void apply(Path path, Method method, Object handler) {
-
-        final Deque<String> nodes = new ArrayDeque<>(Arrays.asList(path.value().split("/")));
-        final String leafNode = nodes.removeLast();
-        final Tree<Node> trunk = buildTrunk(nodes);
+    void applyMethod(Method method, String path, Object handler) {
+        String[] segments = splitPath(path);
+        int leafIndex = segments.length - 1;
+        String leaf = segments[leafIndex];
+        ParseNode trunk = buildTrunk(segments, leafIndex);
 
         Class<?> parameterType = method.getParameterTypes()[0];
+
         if (StartElement.class.isAssignableFrom(parameterType)) {
-
-            Node node = new Node(leafNode, NodeType.START_ELEMENT);
-            MethodInvoker invoker = new MethodInvoker(method, handler);
-            applyInvoker(trunk, node, invoker);
-
+            ParseNode leafNode = addChild(trunk, leaf);
+            leafNode.startInvokers.add(new MethodInvoker(method, handler));
+            leafNode.needsStartElement = true;
         } else if (EndElement.class.isAssignableFrom(parameterType)) {
-
-            Node node = new Node(leafNode, NodeType.END_ELEMENT);
-            MethodInvoker invoker = new MethodInvoker(method, handler);
-            applyInvoker(trunk, node, invoker);
-
+            ParseNode leafNode = addChild(trunk, leaf);
+            leafNode.endInvokers.add(new MethodInvoker(method, handler));
+            leafNode.needsEndElement = true;
         } else if (Conversions.canConvert(parameterType)) {
-
-            Node node = new Node(leafNode, NodeType.END_ELEMENT);
-            MethodInvoker invoker = new MethodInvoker(method, handler);
-            applyInvoker(trunk, node, invoker);
-
+            ParseNode leafNode = addChild(trunk, leaf);
+            leafNode.endInvokers.add(new MethodInvoker(method, handler));
+            leafNode.needsText = true;
         } else {
-
-            Node createNode = new Node(leafNode, NodeType.START_ELEMENT);
-            CreateInstanceInvoker createInstanceInvoker = new CreateInstanceInvoker(parameterType, factory);
-            applyInvoker(trunk, createNode, createInstanceInvoker);
-
-            Node applyNode = new Node(leafNode, NodeType.END_ELEMENT);
-            Invoker subParserInvoker = new ApplySubParserInvoker(new MethodInvoker(method, handler), createInstanceInvoker);
-            applyInvoker(trunk, applyNode, subParserInvoker);
+            ParseNode leafNode = addChild(trunk, leaf);
+            CreateInstanceInvoker creator = new CreateInstanceInvoker(parameterType, factory);
+            leafNode.startInvokers.add(creator);
+            leafNode.endInvokers.add(new ApplySubParserInvoker(new MethodInvoker(method, handler), creator));
         }
     }
 
-    private void applyInvoker(Tree<Node> trunk, Node node, Invoker invoker) {
-        Tree<Node> t = trunk.getTree(node);
-        if (t == null) {
-            node.add(invoker);
-            trunk.addLeaf(node);
-        } else {
-            t.getHead().add(invoker);
-        }
+    private static String[] splitPath(String value) {
+        return SEGMENT_CACHE.computeIfAbsent(value, v -> v.split("/"));
     }
 
-    private Tree<Node> buildTrunk(Deque<String> nodes) {
-        Tree<Node> parent = tree;
-        for (String step : nodes) {
-
-            if (step.length() == 0) {
+    private ParseNode buildTrunk(String[] segments, int endIndex) {
+        ParseNode current = root;
+        for (int i = 0; i < endIndex; i++) {
+            String segment = segments[i];
+            if (segment.isEmpty()) {
                 continue;
             }
-
-            Node node = new Node(step, NodeType.START_ELEMENT);
-
-            Tree<Node> t = parent.getTree(node);
-            if (t == null) {
-                parent = parent.addLeaf(node);
-            } else {
-                parent = t;
-            }
+            current = addChild(current, segment);
         }
-        return parent;
+        return current;
     }
 
-    private XMLEventReader xmlEventReader;
+    private static ParseNode addChild(ParseNode parent, String segment) {
+        int bracket = segment.indexOf('[');
+        if (bracket < 0) {
+            return parent.addChild(segment, null, null);
+        }
+        Matcher matcher = FILTER_PATTERN.matcher(segment);
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Malformed path segment [" + segment + "].");
+        }
+        return parent.addChild(matcher.group(1), matcher.group(2), matcher.group(3));
+    }
 
-    public void parse(XMLEventReader reader) {
-
-        this.xmlEventReader = reader;
-
-        Tree<Node> parseTree = tree;
-
-        final Deque<StartElement> stack = new ArrayDeque<>();
-
+    public void parse(InputStream input) {
         try {
-
-            if (!reader.peek().isStartDocument()) {
-                parseTree = tree.getTree(new Node("/", NodeType.START_ELEMENT));
-            }
-
-            int balance = 0;
-            int ignore = 0;
-
-            while (reader.hasNext()) {
-
-                XMLEvent event = reader.peek();
-                if (event.getEventType() == XMLStreamConstants.END_ELEMENT && balance == 0) {
-                    return;
-                } else {
-                    reader.nextEvent();
-                }
-
-                switch (event.getEventType()) {
-                    case XMLStreamConstants.START_ELEMENT -> {
-                        StartElement startElement = event.asStartElement();
-                        stack.push(startElement);
-                        balance++;
-                        characterStack.push(new StringBuilder());
-
-                        if (ignore == 0) {
-                            Tree<Node> t = invokeStartElementHandlers(parseTree, startElement);
-                            if (t == null) {
-                                if (lookupChild(parseTree, startElement, NodeType.END_ELEMENT) == null) {
-                                    ignore++;
-                                }
-                            } else {
-                                parseTree = t;
-                            }
-                        } else {
-                            ignore++;
-                        }
-                    }
-                    case XMLStreamConstants.END_ELEMENT -> {
-                        EndElement endElement = event.asEndElement();
-                        StartElement startElement = stack.pop();
-                        if (!startElement.getName().equals(endElement.getName())) {
-                            throw new IllegalStateException("Unexpected END element [" + endElement + "].");
-                        }
-                        balance--;
-                        StringBuilder stringBuilder = characterStack.pop();
-
-                        if (ignore > 0) {
-                            ignore--;
-                        } else {
-                            Tree<Node> t = invokeFieldHandlers(parseTree, stringBuilder.toString(), endElement, startElement);
-                            parseTree = t != null ? t : parseTree;
-                        }
-                    }
-                    case XMLStreamConstants.START_DOCUMENT ->
-                            parseTree = tree.getTree(new Node("/", NodeType.START_DOCUMENT));
-                    case XMLStreamConstants.END_DOCUMENT -> {
-                    }
-                    case XMLStreamConstants.CHARACTERS ->
-                            characterStack.peek().append(event.asCharacters().getData());
-                    default -> System.out.println("Event: [" + event + "]");
-                }
-            }
+            XMLStreamReader reader = XML_INPUT_FACTORY.createXMLStreamReader(input);
+            parse(reader);
+            reader.close();
         } catch (XMLStreamException e) {
             throw new RuntimeException("Unable to parse stream.", e);
         }
     }
 
-    private Tree<Node> invokeStartElementHandlers(Tree<Node> parseTree, StartElement startElement) {
+    public void parse(Reader input) {
+        try {
+            XMLStreamReader reader = XML_INPUT_FACTORY.createXMLStreamReader(input);
+            parse(reader);
+            reader.close();
+        } catch (XMLStreamException e) {
+            throw new RuntimeException("Unable to parse stream.", e);
+        }
+    }
 
-        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.START_ELEMENT);
+    public void parse(XMLStreamReader reader) {
+        try {
+            parseLoop(reader);
+        } catch (XMLStreamException e) {
+            throw new RuntimeException("Unable to parse stream.", e);
+        }
+    }
 
-        if (subTree != null) {
+    private void parseLoop(XMLStreamReader reader) throws XMLStreamException {
+        ParseNode parseTree = root;
 
-            Node head = subTree.getHead();
+        int stackCap = 8;
+        ParseNode[] parseTreeStack = new ParseNode[stackCap];
+        StringBuilder[] charStack = new StringBuilder[stackCap];
 
-            for (Invoker invoker : head.getInvokers()) {
-                if (invoker instanceof CreateInstanceInvoker) {
-                    invoker.invoke(xmlEventReader);
-                } else {
-                    invoker.invoke(startElement);
+        int depth = 0;
+        int ignore = 0;
+        int attrBufSize = 8;
+        String[] attrNames = new String[attrBufSize];
+        String[] attrValues = new String[attrBufSize];
+
+        while (reader.hasNext()) {
+            int type = reader.next();
+            if (type == XMLStreamConstants.START_ELEMENT) {
+                String name = reader.getLocalName();
+                int attrCount = reader.getAttributeCount();
+                if (attrCount > attrBufSize) {
+                    attrBufSize = attrCount;
+                    attrNames = new String[attrBufSize];
+                    attrValues = new String[attrBufSize];
+                }
+                for (int i = 0; i < attrCount; i++) {
+                    attrNames[i] = reader.getAttributeLocalName(i);
+                    attrValues[i] = reader.getAttributeValue(i);
+                }
+
+                if (depth >= stackCap) {
+                    int newCap = stackCap * 2;
+                    parseTreeStack = java.util.Arrays.copyOf(parseTreeStack, newCap);
+                    charStack = java.util.Arrays.copyOf(charStack, newCap);
+                    stackCap = newCap;
+                }
+
+                if (ignore > 0) {
+                    ignore++;
+                    depth++;
+                    continue;
+                }
+
+                ParseNode child = parseTree.lookupChild(name, attrCount, attrNames, attrValues);
+                if (child == null) {
+                    ignore++;
+                    depth++;
+                    continue;
+                }
+
+                boolean usedSubParser = invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
+
+                if (usedSubParser) {
+                    invokeEndHandlers(child, null);
+                    continue;
+                }
+
+                parseTreeStack[depth] = parseTree;
+                if (child.needsText) {
+                    StringBuilder sb = charStack[depth];
+                    if (sb == null) {
+                        charStack[depth] = new StringBuilder(32);
+                    } else {
+                        sb.setLength(0);
+                    }
+                }
+                parseTree = child;
+                depth++;
+
+            } else if (type == XMLStreamConstants.END_ELEMENT) {
+                depth--;
+                if (depth < 0) {
+                    return;
+                }
+                if (ignore > 0) {
+                    ignore--;
+                    continue;
+                }
+                StringBuilder text = parseTree.needsText ? charStack[depth] : null;
+                invokeEndHandlers(parseTree, text);
+                parseTree = parseTreeStack[depth];
+
+            } else if (type == XMLStreamConstants.CHARACTERS || type == XMLStreamConstants.CDATA || type == XMLStreamConstants.SPACE) {
+                if (depth > 0 && ignore == 0 && parseTree.needsText) {
+                    charStack[depth - 1].append(reader.getTextCharacters(), reader.getTextStart(), reader.getTextLength());
                 }
             }
-
-            return subTree;
-
         }
-
-        return null;
     }
 
-    private Tree<Node> invokeFieldHandlers(Tree<Node> parseTree, String fieldValue, EndElement endElement, StartElement startElement) {
-
-        Tree<Node> subTree = lookupChild(parseTree, startElement, NodeType.END_ELEMENT);
-
-        if (subTree != null) {
-            subTree.getHead().invoke(fieldValue);
-            subTree.getHead().invoke(endElement);
-
-            return subTree;
+    private boolean invokeStartHandlers(ParseNode node, XMLStreamReader reader,
+                                        int attrCount, String[] attrNames, String[] attrValues) {
+        if (node.startInvokers.isEmpty()) {
+            return false;
         }
+        boolean usedSubParser = false;
+        StartElement startElement = null;
+        AttributeSnapshot snapshot = null;
 
-        return null;
-    }
-
-    private Tree<Node> lookupChild(Tree<Node> parseTree, StartElement startElement, NodeType type) {
-        String name = startElement.getName().getLocalPart();
-        Iterator<Attribute> attributes = startElement.getAttributes();
-        while (attributes.hasNext()) {
-            Attribute attribute = attributes.next();
-            Node candidate = new Node(name, type, attribute.getName().getLocalPart(), attribute.getValue());
-            Tree<Node> match = parseTree.getTree(candidate);
-            if (match != null) {
-                return match;
+        for (int i = 0, n = node.startInvokers.size(); i < n; i++) {
+            Invoker invoker = node.startInvokers.get(i);
+            if (invoker instanceof CreateInstanceInvoker creator) {
+                creator.invoke(reader);
+                usedSubParser = true;
+            } else if (invoker instanceof AttributeInvoker attr) {
+                if (snapshot == null) {
+                    snapshot = new AttributeSnapshot(attrCount, attrNames, attrValues);
+                }
+                attr.invoke(snapshot);
+            } else if (invoker instanceof MethodInvoker method) {
+                if (node.needsStartElement) {
+                    if (startElement == null) {
+                        startElement = buildStartElement(reader, attrCount, attrNames, attrValues);
+                    }
+                    method.invoke(startElement);
+                }
             }
         }
-        return parseTree.getTree(new Node(name, type));
+        return usedSubParser;
+    }
+
+    private void invokeEndHandlers(ParseNode node, StringBuilder text) {
+        if (node.endInvokers.isEmpty()) {
+            return;
+        }
+        String textValue = null;
+        EndElement endElement = null;
+
+        for (int i = 0, n = node.endInvokers.size(); i < n; i++) {
+            Invoker invoker = node.endInvokers.get(i);
+            if (invoker instanceof ApplySubParserInvoker apply) {
+                apply.fire();
+            } else if (invoker instanceof MethodInvoker method && node.needsEndElement && EndElement.class.isAssignableFrom(method.argumentType())) {
+                if (endElement == null) {
+                    endElement = buildEndElement(node.name);
+                }
+                method.invoke(endElement);
+            } else {
+                if (textValue == null) {
+                    textValue = text == null ? "" : text.toString();
+                }
+                invoker.invoke(textValue);
+            }
+        }
+    }
+
+    private static StartElement buildStartElement(XMLStreamReader reader, int attrCount, String[] attrNames, String[] attrValues) {
+        javax.xml.stream.XMLEventFactory factory = javax.xml.stream.XMLEventFactory.newInstance();
+        java.util.List<javax.xml.stream.events.Attribute> attrs = new java.util.ArrayList<>(attrCount);
+        for (int i = 0; i < attrCount; i++) {
+            attrs.add(factory.createAttribute(new QName(attrNames[i]), attrValues[i]));
+        }
+        return factory.createStartElement(new QName(reader.getNamespaceURI(), reader.getLocalName()), attrs.iterator(), java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
+    }
+
+    private static EndElement buildEndElement(String name) {
+        javax.xml.stream.XMLEventFactory factory = javax.xml.stream.XMLEventFactory.newInstance();
+        return factory.createEndElement(new QName(name), java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
+    }
+
+    private static int grow(int cap) {
+        return cap * 2;
+    }
+
+    private static <T> T[] grow(T[] arr, int newCap) {
+        T[] copy = java.util.Arrays.copyOf(arr, newCap);
+        return copy;
+    }
+
+    private static String[] grow(String[] arr, int newCap) {
+        return java.util.Arrays.copyOf(arr, newCap);
     }
 
     private static Object defaultFactory(Class<?> type) {
@@ -290,5 +337,4 @@ public class PathParser {
             throw new RuntimeException("Unable to instantiate [" + type + "].", e);
         }
     }
-
 }
