@@ -33,6 +33,14 @@ public class PathParser {
     private final ParseNode root;
     private final Function<Class<?>, Object> factory;
 
+    public static PathParser of(Object handler) {
+        return new PathParser(handler);
+    }
+
+    public static PathParser of(Object handler, java.util.function.Function<Class<?>, Object> subHandlerFactory) {
+        return new PathParser(handler, subHandlerFactory);
+    }
+
     public PathParser(Object handler) {
         this(handler, PathParser::defaultFactory);
     }
