@@ -27,4 +27,8 @@ final class AttributeSnapshot {
         }
         return null;
     }
+
+    public String attributeValue(String name) {
+        return value(name);
+    }
 }
