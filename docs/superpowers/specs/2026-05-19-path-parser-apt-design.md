@@ -61,7 +61,9 @@ Runtime
 
 ### Compile-time (`path-parser-processor`)
 
-**`PathProcessor extends AbstractProcessor`** — entry-point. Lytter på `@Path` (retention endres fra `RUNTIME` til `CLASS`). Per `RoundEnvironment`: samler kandidatklasser via `getElementsAnnotatedWith`. For hver: bygger `HandlerModel`, validerer, genererer, skriver via `Filer`.
+**`PathProcessor extends AbstractProcessor`** — entry-point. Lytter på `@Path` (retention endres fra `RUNTIME` til `CLASS`). Per `RoundEnvironment`: samler kandidatklasser via `getElementsAnnotatedWith`. For hver: bygger `HandlerModel`, validerer, genererer factory-klassen, akkumulerer FQN i intern set.
+
+I siste `processingOver()`-pass emitteres én aggregerende `PathParserRegistry`-klasse for hele modulen — den inneholder `Class → factory`-kartet for alle handlerne kompilert lokalt. Denne registry-klassen er den eneste som registreres som `ServiceLoader`-provider (én linje i `META-INF/services/...PathParserFactoryRegistry`). Dette unngår klassiske APT-fellene med iterativt-akkumulert services-fil (duplikater, overskriving, inkrementell-kompilerings-tap). Konsumenter med N moduler får N registries; runtime samler dem alle via én `ServiceLoader`-iterasjon.
 
 **`HandlerModel`** — speilbilde av dagens `HandlerSpec`, men bygget fra `javax.lang.model.element` / `TypeMirror` (kompilator-API). `List<Binding>` med subtypene:
 - `FieldBinding` — felt-tilordning med type-konvertering
@@ -78,8 +80,8 @@ Vet om type-konvertering, element-type i collection, filter-attributter, sub-han
 - Type som ikke kan konverteres og ikke er en sub-handler-kandidat
 - Malformerte path-uttrykk
 - Sub-handler-typer uten egne `@Path`-elementer
-- Selv-refererende sub-handler-grafer
 - Tom `@Path`-verdi
+- Generic-type-uttrekking: `List<T>` der `T` ikke kan resolves som konkret type fra `TypeMirror.getTypeArguments()`
 
 **`HandlerCodeGenerator`** — bygger Java-kilde via JavaPoet. Emitterer én `<HandlerName>_PathParser`-klasse i samme pakke som handleren. Genererer:
 - Statisk `ParseNode TREE` bygget via private hjelper-metoder, én per sub-tre, slik at filer for store handlere forblir lesbare snarere enn å være én monolittisk klasse-initializer.
@@ -90,14 +92,25 @@ Lesbarhet av generert kode er eksplisitt mål: når en bruker leser `OrderHandle
 
 ### Runtime (`path-parser`)
 
-**`PathParserFactory`** — sealed SPI:
+**`PathParserFactory`** — SPI:
 ```java
-public sealed interface PathParserFactory {
+public interface PathParserFactory {
     Class<?> handlerType();
     ParseNode tree();
-    InvokerSet bind(Object handler, Function<Class<?>, Object> subFactory);
+    InvokerSet bind(Object handler, Function<Class<?>, Object> subFactory,
+                    Function<Class<?>, PathParserFactory> subFactoryLookup);
 }
 ```
+
+**`PathParserFactoryRegistry`** — aggregerende SPI per modul:
+```java
+public interface PathParserFactoryRegistry {
+    Map<Class<?>, PathParserFactory> factories();
+    String fingerprint();   // hash av @Path-metadata, brukes for stale-deteksjon
+}
+```
+
+`bind()` mottar to fabrikker: brukerens `subFactory` (for handler-instans-konstruksjon) og en intern `subFactoryLookup` (for å finne sub-handler-factories). Den interne lookup-en er en `Supplier`-aktig portal — *ikke* en hard kompiler-tids referanse — slik at rekursive sub-handler-grafer (`Node → Node`) støttes ved lazy binding ved første `<element>`-match.
 
 **`InvokerSet`** — record som holder handler-instans og dens bound invokers. Brukes av `parseLoop` som i dag.
 
@@ -107,24 +120,34 @@ public static PathParser of(Object handler);
 public static PathParser of(Object handler, Function<Class<?>, Object> subHandlerFactory);
 ```
 
-Begge gjør `ServiceLoader.load(PathParserFactory.class)` lazy: `stream()` itereres bare inntil en provider med matchende `handlerType()` finnes. Funnet factory caches i en `ConcurrentHashMap<Class<?>, PathParserFactory>`, slik at prosjekter med mange handler-klasser ikke betaler for klasser de ikke bruker. Cache fylles på-etterspørsel, ikke ved klasse-last.
+Begge gjør `ServiceLoader.load(PathParserFactoryRegistry.class, handler.getClass().getClassLoader())` (eksplisitt classloader for OSGi/multi-classloader-trygghet). Hver registry's `factories()`-kart slås sammen i en `ConcurrentHashMap<Class<?>, PathParserFactory>` (den globale faktoren-cachen). Sammenslåing skjer lazy ved første `of()`-kall som ikke finner en match, slik at moduler bare betales for når deres handlere faktisk brukes.
+
+For ekstra performance: `ServiceLoader.Provider.type()` brukes til å filtrere registry-providere uten å instansiere dem hvis matching mot `handlerType()` kan unngås — men i praksis er det få registries (én per modul), så optimalisering er sekundær.
 
 **`@Path`** — endres fra `@Retention(RUNTIME)` til `@Retention(CLASS)`. Sparer minne ved runtime og signaliserer at den ikke brukes til runtime-introspeksjon.
 
 ### Sub-handlere
 
-Hver sub-handler-type (f.eks. `Item` brukt av `OrderHandler.onItem(Item)`) får sin egen `Item_PathParser`. Generert `OrderHandler_PathParser` slår opp `Item_PathParser` via `ServiceLoader`-cache ved `bind()`-tid (én gang per parser-instans), ikke per element-match.
+Hver sub-handler-type (f.eks. `Item` brukt av `OrderHandler.onItem(Item)`) får sin egen `Item_PathParser`. Generert `OrderHandler_PathParser` slår opp `Item_PathParser` via den globale factory-cachen, men *gjør oppslaget lazy* — via en `Supplier`-portal som klones inn ved `bind()`-tid og resolveres ved første `<item>`-match. Dette løser to ting:
+
+- **Rekursive datastrukturer.** En `MenuItem` med `List<MenuItem> children` (vanlig domene-mønster) støttes uten kompiler-tids stack overflow på sub-handler-resolusjon.
+- **Multi-modul-builds.** En handler i modul A kan referere en sub-handler i modul B selv om B kompileres separat — så lenge B's registry er på classpath ved runtime, finnes sub-factory ved første match.
+
+Resolusjon caches per parent-`InvokerSet` etter første oppslag — så vi betaler `Map.get` kun én gang per sub-handler-type per parser-instans, ikke per element-match.
 
 ### Privat felt-tilgang
 
-Generert `<H>_PathParser` ligger i samme pakke som `<H>` (`Filer` skriver dit) og i samme modul (begge produseres av bruker-modulens kompilering).
+Generert `<H>_PathParser` ligger i samme pakke som `<H>` (`Filer` skriver dit) og i samme modul.
+
 - `public`/`package-private` felt: direkte `handler.id = value`. Ingen refleksjon.
-- `private` felt: APT genererer `private static final VarHandle ID = MethodHandles.lookup().findVarHandle(...)` i samme pakke (har dermed pakke-tilgang via `lookup()`). `VarHandle.set` brukes. `VarHandle` er førsteklasses native på GraalVM.
-- `private`-metoder: tilsvarende `MethodHandle` via `lookup.findVirtual(...)`.
+- `private` felt: krever `MethodHandles.privateLookupIn(<H>.class, MethodHandles.lookup())` — same-package alene gir bare package-private-tilgang, ikke privat. `privateLookupIn` fungerer i to konfigurasjoner:
+  - **Same module:** når generert kode og handler er i samme JPMS-modul (det vanlige), krever `privateLookupIn` ingen `opens`. Dette er hovedscenariet.
+  - **Open module:** når handler ligger i en annen modul, krever modulen `opens <pkg>`. Dokumenteres som krav i 3.0-migrasjon for multi-modul-prosjekter.
+- `private`-metoder: tilsvarende `privateLookupIn`-baserte `MethodHandle`.
 
-Siden generert kode er i samme JPMS-modul som handleren, kreves *ingen* `opens`-direktiv i bruker-`module-info.java`. Dette forblir trygt selv når brukere lukker pakkene sine.
+**Trade-off:** Vi kunne påkrevd at `@Path`-felt må være ikke-private (kompileringsfeil ellers). Det forenkler spec-en og fjerner `privateLookupIn`-kompleksiteten. Holder `private` av hensyn til 2.x-paritet, men markerer det som kandidat for fjerning i en senere versjon hvis JPMS-friksjon i praksis dominerer.
 
-Beholder feature-paritet med 2.x uten å påkreve at felt eksponeres.
+`VarHandle`/`MethodHandle` er førsteklasses primitiver på GraalVM native-image — ingen `reflect-config.json` kreves for dem.
 
 ## Datafly
 
@@ -186,7 +209,6 @@ Eksempel-meldinger (alle via `Messager.printMessage(ERROR, msg, element)` for ID
 | Duplikat `@Path` | `"@Path('/order/id') deklareres to ganger i OrderHandler: feltet 'id' og metoden 'setId'."` |
 | Ikke-konvertibel type | `"Felt-type 'java.net.URL' kan ikke konverteres fra tekst, og inneholder ingen @Path-annoterte elementer for sub-handler-bruk."` |
 | Malformert path | `"Path '/order/item[@id=' har malformert filter-uttrykk."` |
-| Sykler | `"OrderHandler refererer seg selv via @Path-feltet 'parent'; sykliske sub-handlere er ikke støttet."` |
 | Tom path | `"@Path-verdien kan ikke være tom."` |
 
 ### Runtime-feil i `PathParser.of`
@@ -197,7 +219,7 @@ Eksempel-meldinger (alle via `Messager.printMessage(ERROR, msg, element)` for ID
 | `ServiceLoader` finner ingen tjenester | Samme exception med ekstra hint om `META-INF/services`-stien |
 | Sub-handler-type mangler factory | Fanges ved `bind()`-tid med peker til parent-handler — ikke under parsing |
 
-**Filosofi:** Fail-fast. Alt valideres ved `PathParser.of(...)`. Ingen mystiske NPE-er under parsing.
+**Filosofi:** Fail-fast for *statisk resolverbare* feil. Alt som er kjent ved compile-time + classpath-tid (manglende factory, hash-mismatch, manglende sub-handler-registry) valideres ved `PathParser.of(...)`. Dynamiske feil — særlig brukerens custom `subFactory` som ikke kan instansiere `Item` — bobler opp først ved første matchende element. Dette er bevisst: å pre-flyte alle sub-handler-typer ville påkrevd instansiering selv for handlere som aldri matcher, og er en regresjon vs 2.x-atferd. Dokumenteres tydelig som unntak fra fail-fast-løftet.
 
 ### Parsing-tid
 
@@ -205,7 +227,9 @@ Type-konverteringsfeil (`NumberFormatException`), I/O-feil fra `XMLStreamReader`
 
 ### Edge-case: stale generert kode
 
-Bruker endrer `@Path`-streng, glemmer å rekompilere. Detekteres ikke automatisk — VarHandle/felt-set kjører videre med gammel path. Samme problem som alle APT-baserte bibliotek (MapStruct, Dagger). Mitigering: inkrementell kompilering i moderne build-verktøy. Dokumentert i README-feilsøkings-seksjon.
+Bruker endrer `@Path`-streng, glemmer å rekompilere. APT genererer et `fingerprint`-felt i `PathParserRegistry` — en SHA-256 over alle `@Path`-uttrykk og felt/metode-signaturer den prosesserte. Ved `PathParser.of(handler)` rekonstrueres tilsvarende hash fra den faktiske klassens bytecode (lest via `Class.getResource("<H>.class")` + `Constant-pool`-scan av `@Path`-attribute-verdier; ingen `getAnnotation` siden retention er CLASS, men attributtene finnes i klasse-fila). Mismatch kaster `IllegalStateException` med klar instruks: «klasse `X` har endret seg uten regenerering — kjør `mvn clean compile` eller invalider build-cache».
+
+Hash-rekonstruksjons-banen er valgfri (kan slås av via `PathParser.skipFingerprintCheck()` ved system-property hvis brukere ikke vil ha cost). Sjekken kjøres bare én gang per handler-klasse per JVM (cachet).
 
 ## Testing
 
@@ -285,6 +309,25 @@ Endringer i bruker-klasser er ikke nødvendig (samme `@Path`-API). Bare kall-sit
 - IDE-plugin for `@Path`-autocomplete.
 - Automatisk migrasjons-verktøy fra 2.x til 3.0.
 - Spring/Quarkus-integrasjoner (DI-fabrikken eksisterer; tilstrekkelig).
+
+## Review-merknader
+
+Specen ble gjennomgått 2026-05-19 av tre uavhengige agenter (Codex, Gemini, gemma4:26b). Funn med høy alvorlighet ble innarbeidet:
+
+- **Privat felt-tilgang:** `MethodHandles.lookup()` i same-package gir bare package-private — endret til `privateLookupIn`. Multi-modul-tilfellet krever `opens`-direktiv; dokumentert.
+- **`META-INF/services`-strategi:** byttet fra iterativt appendert services-fil til én aggregerende `PathParserRegistry` per modul (unngår inkrementell-kompilerings-feil og duplikater).
+- **Rekursive sub-handlere:** tidligere blanket-forbudt — endret til lazy binding via `Supplier`-portal. `Node → Node`-mønstre støttes nå.
+- **ServiceLoader-classloader:** byttet fra implicit context-classloader til eksplisitt `handler.getClass().getClassLoader()` for OSGi-trygghet.
+- **Stale-deteksjon:** la til SHA-256-fingerprint over `@Path`-metadata, validert ved `of()`. Kan deaktiveres via system-property.
+- **Cache-strategi:** valgte én mekanisme (`ConcurrentHashMap` for kart, lazy fyllt). `ClassValue` er ikke lenger nevnt.
+- **Generic-type-uttrekking:** la til `List<T>`-valideringsregel i `HandlerValidator`.
+- **Fail-fast-presisjon:** presisert at custom `subFactory`-feil bobler ved første match, ikke ved `of()`-tid.
+
+Funn vi *ikke* innarbeidet, med begrunnelse:
+- **Native-image PR-test:** beholdt post-merge — bevisst trade-off mellom CI-tid og signal. Smoke-test på PR kan vurderes som senere optimalisering.
+- **Refleksjons-fallback for tredjeparts-handlere:** eksplisitt designvalg (Q1, hard 3.0-erstatning). Akseptert kostnad.
+- **Starter-dependency/Maven-extension:** YAGNI for v3.0. To-artefakt-mønsteret er kjent fra MapStruct/Lombok.
+- **Domain-spesifikke exception-wrappere:** lav-alvorlighet, kan legges til i senere minor.
 
 ## Verifiseringskommandoer
 
