@@ -234,6 +234,38 @@ public final class HandlerCodeGenerator {
                     parent = var;
                 }
                 buildTree.addStatement("$L.needsText = true", parent);
+            } else if (b instanceof Binding.MethodEvent ev) {
+                String[] segments = ev.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
+                    }
+                    parent = var;
+                }
+                if (ev.eventKind() == Binding.MethodEvent.EventKind.START) {
+                    buildTree.addStatement("$L.needsStartElement = true", parent);
+                } else {
+                    buildTree.addStatement("$L.needsEndElement = true", parent);
+                }
             }
         }
         buildTree.addStatement("return root");
@@ -384,6 +416,32 @@ public final class HandlerCodeGenerator {
                         lookup.toString(),
                         textInvoker,
                         mt.methodName(), callValue);
+            } else if (b instanceof Binding.MethodEvent ev) {
+                String[] segments = ev.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                boolean isStart = ev.eventKind() == Binding.MethodEvent.EventKind.START;
+                String invokerList = isStart ? "startInvokers" : "endInvokers";
+                String kindEnum = isStart ? "START_ELEMENT" : "END_ELEMENT";
+                String castType = isStart
+                        ? "javax.xml.stream.events.StartElement"
+                        : "javax.xml.stream.events.EndElement";
+                bind.addStatement("$L.$L.add(new $T($T.Kind.$L, arg -> h.$L(($L) arg)))",
+                        lookup.toString(), invokerList,
+                        ClassName.get("org.brylex.parser", "EventInvoker"),
+                        ClassName.get("org.brylex.parser", "EventInvoker"),
+                        kindEnum,
+                        ev.methodName(), castType);
             }
         }
         bind.addStatement("return new $T(handler, $T.of())", invokerSet, Map.class);

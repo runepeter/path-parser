@@ -303,6 +303,11 @@ public class PathParser {
                     }
                     method.invoke(startElement);
                 }
+            } else if (invoker instanceof EventInvoker ev) {
+                if (ev.kind() == EventInvoker.Kind.START_ELEMENT) {
+                    if (startElement == null) startElement = buildStartElement(reader, attrCount, attrNames, attrValues);
+                    ev.invoke(startElement);
+                }
             }
         }
         return usedSubParser;
@@ -324,6 +329,9 @@ public class PathParser {
                     endElement = buildEndElement(node.name);
                 }
                 method.invoke(endElement);
+            } else if (invoker instanceof EventInvoker ev && ev.kind() == EventInvoker.Kind.END_ELEMENT) {
+                if (endElement == null) endElement = buildEndElement(node.name);
+                ev.invoke(endElement);
             } else {
                 if (textValue == null) {
                     textValue = text == null ? "" : text.toString();

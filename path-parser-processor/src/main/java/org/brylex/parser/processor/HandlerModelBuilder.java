@@ -117,9 +117,15 @@ public final class HandlerModelBuilder {
                 // For Task 3.5: only handle convertible parameter types.
                 // StartElement/EndElement are handled in Task 3.6.
                 // Sub-handler types are handled in Task 3.7.
-                if (paramType.equals("javax.xml.stream.events.StartElement")
-                        || paramType.equals("javax.xml.stream.events.EndElement")) {
-                    continue;   // 3.6
+                if (paramType.equals("javax.xml.stream.events.StartElement")) {
+                    bindings.add(new Binding.MethodEvent(pathValue, method, methodName,
+                            Binding.MethodEvent.EventKind.START));
+                    continue;
+                }
+                if (paramType.equals("javax.xml.stream.events.EndElement")) {
+                    bindings.add(new Binding.MethodEvent(pathValue, method, methodName,
+                            Binding.MethodEvent.EventKind.END));
+                    continue;
                 }
                 if (!isConvertibleFieldType(paramType)) {
                     continue;   // 3.7
