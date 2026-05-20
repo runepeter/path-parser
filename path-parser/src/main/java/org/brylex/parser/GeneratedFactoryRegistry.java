@@ -21,7 +21,15 @@ final class GeneratedFactoryRegistry {
 
     private static Map<Class<?>, PathParserFactory> buildMap(ClassLoader cl) {
         Map<Class<?>, PathParserFactory> map = new HashMap<>();
+        boolean skipCheck = Boolean.getBoolean("org.brylex.parser.skipFingerprintCheck");
         for (PathParserFactoryRegistry registry : ServiceLoader.load(PathParserFactoryRegistry.class, cl)) {
+            if (!skipCheck) {
+                String fp = registry.fingerprint();
+                if (fp == null || fp.isEmpty()) {
+                    throw new IllegalStateException("Registry " + registry.getClass()
+                            + " mangler fingerprint. Regenerér: 'mvn clean compile'.");
+                }
+            }
             map.putAll(registry.factories());
         }
         return map;
