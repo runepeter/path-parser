@@ -9,11 +9,19 @@ til felt og metoder via xpath-lignende uttrykk i `@Path`-annotasjonen.
 <dependency>
   <groupId>org.brylex</groupId>
   <artifactId>path-parser</artifactId>
-  <version>2.0.0</version>
+  <version>3.0.0</version>
+</dependency>
+<dependency>
+  <groupId>org.brylex</groupId>
+  <artifactId>path-parser-processor</artifactId>
+  <version>3.0.0</version>
+  <scope>provided</scope>
 </dependency>
 ```
 
-Krever Java 21.
+Krever Java 21. Processoren genererer en parser per `@Path`-annotert
+handler-klasse på kompileringstidspunkt; runtime-modulen bruker derfor
+ingen refleksjon og fungerer uten konfig på GraalVM native-image.
 
 ## Bruk
 
@@ -35,14 +43,13 @@ public class OrderHandler {
 }
 ```
 
-Kjør parseren mot en `XMLEventReader`:
+Kjør parseren mot en `Reader`, `InputStream` eller `XMLStreamReader`:
 
 ```java
 OrderHandler handler = new OrderHandler();
 
 try (Reader reader = new StringReader(xml)) {
-    XMLEventReader events = XMLInputFactory.newInstance().createXMLEventReader(reader);
-    new PathParser(handler).parse(events);
+    PathParser.of(handler).parse(reader);
 }
 ```
 
@@ -144,7 +151,7 @@ Gi en `Function<Class<?>, Object>` for å overstyre hvordan sub-handlere
 opprettes — nyttig for DI-rammeverk eller tester:
 
 ```java
-new PathParser(handler, type -> injector.getInstance(type)).parse(events);
+PathParser.of(handler, type -> injector.getInstance(type)).parse(reader);
 ```
 
 Standard er kall til `getDeclaredConstructor().newInstance()`.
@@ -163,6 +170,26 @@ kompilerte path-trær per handler-klasse. JMH-benchmarks vs Jakarta JAXB 4.0
 
 Allokering per parse er ~9 MB vs JAXBs ~4 MB ved 1000 orders. Kjør selv via
 `org.brylex.bench.BenchmarkRunner`.
+
+## Native-image
+
+Biblioteket fungerer uten ekstra konfigurasjon på GraalVM native-image
+fordi runtime-banen er refleksjonsfri — alle handlere får en
+`PathParserFactory` generert ved kompilering. Se
+`examples/native-image-smoke/` for et minimalt prosjekt som bygges av
+CI med `--no-fallback`.
+
+## Migrasjon fra 2.x
+
+3.0 er en brudd-versjon:
+
+1. Legg til `path-parser-processor` som `<scope>provided</scope>`-dependency.
+2. Erstatt `new PathParser(handler)` med `PathParser.of(handler)` (og
+   tilsvarende for to-argument-formen).
+3. Rekompilér — processoren genererer en parser per handler-klasse.
+
+Refleksjons-fallbacken i 2.x er fjernet; et manglende generert
+factory-oppslag gir nå `IllegalStateException` ved `PathParser.of(handler)`.
 
 ## Bygg
 
