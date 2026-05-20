@@ -20,12 +20,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: maven
 
+      # path-parser-processor må eksistere i ~/.m2 før path-parser sin testCompile
+      # kan kjøre (samme chicken-and-egg som i ci.yml). -DskipTests skipper KUN
+      # surefire:test, ikke testCompile — vi må bruke -Dmaven.test.skip=true for
+      # å hoppe over testCompile-fasen.
       - name: Build and install runtime + processor
-        run: mvn -B -ntp -DskipTests install
+        run: mvn -B -ntp -Dmaven.test.skip=true install
 
       - name: Build native-image smoke
         working-directory: examples/native-image-smoke
-        run: mvn -B -ntp -DskipTests package
+        run: mvn -B -ntp -Dmaven.test.skip=true package
 
       - name: Run native binary
         run: |
