@@ -14,28 +14,28 @@ import java.util.Map;
  * lokalt navn for allokeringsfri oppslag, med en sekundaer mekanisme for
  * attributt-filtrerte noder ({@code food[@id='FRUIT']}-syntaks).
  */
-final class ParseNode {
+public final class ParseNode {
 
     final String name;
     final String filterAttrName;
     final String filterAttrValue;
 
-    final List<Invoker> startInvokers = new ArrayList<>(0);
-    final List<Invoker> endInvokers = new ArrayList<>(0);
+    public final List<Invoker> startInvokers = new ArrayList<>(0);
+    public final List<Invoker> endInvokers = new ArrayList<>(0);
 
-    boolean needsText;
-    boolean needsStartElement;
-    boolean needsEndElement;
+    public boolean needsText;
+    public boolean needsStartElement;
+    public boolean needsEndElement;
 
     private Map<String, ChildBucket> children;
 
-    ParseNode(String name, String filterAttrName, String filterAttrValue) {
+    public ParseNode(String name, String filterAttrName, String filterAttrValue) {
         this.name = name;
         this.filterAttrName = filterAttrName;
         this.filterAttrValue = filterAttrValue;
     }
 
-    ParseNode addChild(String name, String filterAttrName, String filterAttrValue) {
+    public ParseNode addChild(String name, String filterAttrName, String filterAttrValue) {
         if (children == null) {
             children = new HashMap<>(4);
         }
@@ -55,7 +55,7 @@ final class ParseNode {
         return created;
     }
 
-    ParseNode lookupChild(String name, int attrCount, String[] attrNames, String[] attrValues) {
+    public ParseNode lookupChild(String name, int attrCount, String[] attrNames, String[] attrValues) {
         if (children == null) {
             return null;
         }
