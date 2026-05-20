@@ -19,6 +19,15 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # path-parser-processor må eksistere i ~/.m2 før path-parser sin testCompile
+      # (som bruker processoren via annotationProcessorPaths) kan kjøre. Pass 1
+      # hopper over testCompile-fasen helt (-Dmaven.test.skip skipper compile +
+      # eksekvering; -DskipTests alene skipper KUN eksekvering og kjører testCompile,
+      # som ville krevd processoren). Pass 2 kjører full verify mot installert
+      # processor.
+      - name: Bootstrap install (hopp over tester for å installere processoren)
+        run: mvn -B -ntp -Dmaven.test.skip=true install
+
       - name: Build and test
         run: mvn -B -ntp verify
 
@@ -27,5 +36,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
-          path: target/site/jacoco/
+          path: '**/target/site/jacoco/'
           if-no-files-found: warn

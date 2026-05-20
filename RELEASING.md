@@ -27,11 +27,29 @@ Releases publiseres til Maven Central via Sonatype Central Portal
 
    `id` må matche `<publishingServerId>` i `pom.xml` (`central`).
 
+## Multi-modul-merknad
+
+Fra og med 3.0 består prosjektet av to publiserte moduler:
+
+- `path-parser` — runtime (consumer-dependency)
+- `path-parser-processor` — APT-codegen (`<scope>provided</scope>` hos
+  konsumenten)
+
+`maven-release-plugin` med `autoVersionSubmodules` slipper begge samtidig.
+Begge må være tilgjengelige i Central før release-PR-en merges, ellers
+brytes konsumerende builds.
+
+`examples/native-image-smoke/` er **ikke** del av reactoren og skal ikke
+publiseres — den er kun for CI-verifisering av native-image-banen.
+
 ## Pre-release-sjekkliste
 
 - [ ] `master` har det som skal slippes
-- [ ] `mvn clean verify` grønn
-- [ ] CI grønn på `master`
+- [ ] `mvn clean verify` grønn (alle moduler)
+- [ ] CI `build` grønn på den committen vi tagger
+- [ ] CI `native-image`-jobben grønn på samme commit
+- [ ] `examples/native-image-smoke` kjørt lokalt med GraalVM 21 (manuell
+      smoke om CI-jobben av en grunn ikke har kjørt)
 - [ ] CHANGELOG/release notes oppdatert (om relevant)
 
 ## Slipp-prosedyre
