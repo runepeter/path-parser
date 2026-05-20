@@ -19,6 +19,13 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # path-parser-processor må eksistere i ~/.m2 før path-parser sin testCompile
+      # (som bruker processoren via annotationProcessorPaths) kan kjøre. Pass 1
+      # bygger og installerer begge moduler uten testCompile (-DskipTests skipper
+      # både test-compile og test). Pass 2 kjører full verify mot installerte artefakter.
+      - name: Bootstrap install (skip tests so processor blir tilgjengelig)
+        run: mvn -B -ntp -DskipTests install
+
       - name: Build and test
         run: mvn -B -ntp verify
 
