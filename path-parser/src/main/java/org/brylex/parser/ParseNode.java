@@ -80,6 +80,20 @@ public final class ParseNode {
         return bucket.filterless;
     }
 
+    public ParseNode lookupChildFiltered(String name, String filterAttrName, String filterAttrValue) {
+        if (children == null) return null;
+        ChildBucket bucket = children.get(name);
+        if (bucket == null) return null;
+        if (filterAttrName == null) return bucket.filterless;
+        for (ParseNode candidate : bucket.entries) {
+            if (filterAttrName.equals(candidate.filterAttrName)
+                    && filterAttrValue.equals(candidate.filterAttrValue)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     private static boolean eq(String a, String b) {
         return a == null ? b == null : a.equals(b);
     }

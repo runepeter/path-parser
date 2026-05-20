@@ -10,6 +10,18 @@ import java.util.function.Function;
 
 public final class HandlerCodeGenerator {
 
+    private static final java.util.regex.Pattern FILTER_PATTERN =
+            java.util.regex.Pattern.compile("(.+)\\[@(.+)=['\"]?([^'\"\\]]+)['\"]?\\]");
+
+    /** Returns [elementName, filterAttrName|null, filterAttrValue|null]. */
+    private static String[] parseSegment(String segment) {
+        java.util.regex.Matcher m = FILTER_PATTERN.matcher(segment);
+        if (m.matches()) {
+            return new String[]{m.group(1), m.group(2), m.group(3)};
+        }
+        return new String[]{segment, null, null};
+    }
+
     private final ProcessingEnvironment env;
 
     public HandlerCodeGenerator(ProcessingEnvironment env) {
@@ -93,11 +105,24 @@ public final class HandlerCodeGenerator {
                 StringBuilder varName = new StringBuilder("n");
                 for (String segment : segments) {
                     if (segment.isEmpty()) continue;
-                    varName.append("_").append(toJavaIdent(segment));
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
                     String var = varName.toString();
                     if (declaredVars.add(var)) {
-                        buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
-                                parseNode, var, parent, segment);
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
                     }
                     parent = var;
                 }
@@ -109,11 +134,24 @@ public final class HandlerCodeGenerator {
                 StringBuilder varName = new StringBuilder("n");
                 for (String segment : segments) {
                     if (segment.isEmpty()) continue;
-                    varName.append("_").append(toJavaIdent(segment));
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
                     String var = varName.toString();
                     if (declaredVars.add(var)) {
-                        buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
-                                parseNode, var, parent, segment);
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
                     }
                     parent = var;
                 }
@@ -166,7 +204,14 @@ public final class HandlerCodeGenerator {
                 StringBuilder lookup = new StringBuilder("TREE");
                 for (String segment : segments) {
                     if (segment.isEmpty()) continue;
-                    lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
                 }
                 if ("java.lang.String".equals(ft.fieldType())) {
                     bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
@@ -184,7 +229,14 @@ public final class HandlerCodeGenerator {
                 StringBuilder lookup = new StringBuilder("TREE");
                 for (String segment : segments) {
                     if (segment.isEmpty()) continue;
-                    lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
                 }
                 if ("java.lang.String".equals(attr.fieldType())) {
                     bind.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = value))",
