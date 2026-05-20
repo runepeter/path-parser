@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.brylex</groupId>
         <artifactId>path-parser-parent</artifactId>
-        <version>3.0.0</version>
+        <version>3.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>path-parser-processor</artifactId>
@@ -23,7 +23,7 @@
         <dependency>
             <groupId>org.brylex</groupId>
             <artifactId>path-parser</artifactId>
-            <version>3.0.0</version>
+            <version>3.0.1-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>com.squareup</groupId>
