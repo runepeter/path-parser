@@ -46,7 +46,7 @@ public class PathParserVsJaxbBenchmark {
     @Benchmark
     public org.brylex.bench.pp.Orders pathParser() throws Exception {
         org.brylex.bench.pp.Orders root = new org.brylex.bench.pp.Orders();
-        new PathParser(root).parse(new ByteArrayInputStream(xmlBytes));
+        PathParser.of(root).parse(new ByteArrayInputStream(xmlBytes));
         return root;
     }
 

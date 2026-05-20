@@ -66,7 +66,7 @@ public class FactoryTest {
 
     private static <T> T parse(String xml, T handler, java.util.function.Function<Class<?>, Object> factory) throws Exception {
         try (Reader reader = new StringReader(xml)) {
-            
+
             PathParser parser = factory == null ? new PathParser(handler) : new PathParser(handler, factory);
             parser.parse(reader);
         }

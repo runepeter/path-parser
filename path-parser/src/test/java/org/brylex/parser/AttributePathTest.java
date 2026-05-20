@@ -57,8 +57,8 @@ public class AttributePathTest {
 
     private static <T> T parse(String xml, T handler) throws Exception {
         try (Reader reader = new StringReader(xml)) {
-            
-            new PathParser(handler).parse(reader);
+
+            PathParser.of(handler).parse(reader);
         }
         return handler;
     }

@@ -18,7 +18,7 @@ class EquivalenceTest {
         byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
 
         org.brylex.bench.pp.Orders pp = new org.brylex.bench.pp.Orders();
-        new PathParser(pp).parse(new ByteArrayInputStream(bytes));
+        PathParser.of(pp).parse(new ByteArrayInputStream(bytes));
 
         Unmarshaller unmarshaller = JAXBContext.newInstance(org.brylex.bench.jaxb.Orders.class).createUnmarshaller();
         org.brylex.bench.jaxb.Orders jaxb = (org.brylex.bench.jaxb.Orders) unmarshaller.unmarshal(new ByteArrayInputStream(bytes));

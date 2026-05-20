@@ -32,7 +32,7 @@ public class PathParserTest {
         try (Reader reader = new StringReader(xml)) {
 
 
-            new PathParser(handler).parse(reader);
+            PathParser.of(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("C");
@@ -56,7 +56,7 @@ public class PathParserTest {
         try (Reader reader = new StringReader(xml)) {
 
 
-            new PathParser(handler).parse(reader);
+            PathParser.of(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("D");
@@ -79,7 +79,7 @@ public class PathParserTest {
         try (Reader reader = new StringReader(xml)) {
 
 
-            new PathParser(handler).parse(reader);
+            PathParser.of(handler).parse(reader);
         }
 
         assertThat(handler.children).hasSize(4);
@@ -105,7 +105,7 @@ public class PathParserTest {
         try (Reader reader = new StringReader(xml)) {
 
 
-            new PathParser(handler).parse(reader);
+            PathParser.of(handler).parse(reader);
         }
 
         assertThat(handler.child).isEqualTo("A");

@@ -115,8 +115,8 @@ public class SubHandlerCollectionTest {
 
         WithCustomFactory handler = new WithCustomFactory();
         try (Reader reader = new StringReader(xml)) {
-            
-            new PathParser(handler, type -> new Tracked("custom")).parse(reader);
+
+            PathParser.of(handler, type -> new Tracked("custom")).parse(reader);
         }
 
         assertThat(handler.items).hasSize(2);
@@ -126,8 +126,8 @@ public class SubHandlerCollectionTest {
 
     private static <T> T parse(String xml, T handler) throws Exception {
         try (Reader reader = new StringReader(xml)) {
-            
-            new PathParser(handler).parse(reader);
+
+            PathParser.of(handler).parse(reader);
         }
         return handler;
     }
