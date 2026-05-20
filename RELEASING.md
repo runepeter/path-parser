@@ -54,12 +54,19 @@ publiseres — den er kun for CI-verifisering av native-image-banen.
 
 ## Slipp-prosedyre
 
+Erstatt `X.Y.Z` med den faktiske versjonen i kommandoene under
+(eksempelet bruker `3.0.0` → `3.0.1-SNAPSHOT`).
+
 1. **Bytt versjon** fra `X.Y.Z-SNAPSHOT` til `X.Y.Z`:
 
    ```sh
-   mvn versions:set -DnewVersion=2.0.0 -DgenerateBackupPoms=false
-   git commit -am "release 2.0.0"
+   mvn versions:set -DnewVersion=3.0.0 -DprocessAllModules=true -DgenerateBackupPoms=false
+   git commit -am "release 3.0.0"
    ```
+
+   `-DprocessAllModules=true` er nødvendig i multi-modul: uten den
+   oppdateres KUN parent-pom og barnemodulene står igjen som
+   `X.Y.Z-SNAPSHOT`.
 
 2. **Bygg og signer** lokalt for å verifisere:
 
@@ -67,13 +74,14 @@ publiseres — den er kun for CI-verifisering av native-image-banen.
    mvn -Prelease clean verify
    ```
 
-   Produserer `path-parser-2.0.0.jar`, `-sources.jar`, `-javadoc.jar` og
-   tilhørende `.asc`-signaturer i `target/`.
+   Produserer `path-parser-3.0.0.jar`, `-sources.jar`, `-javadoc.jar`,
+   `path-parser-processor-3.0.0.jar` (+ tilsvarende sources/javadoc), og
+   tilhørende `.asc`-signaturer i `target/` i hver modul.
 
 3. **Tagg og push**:
 
    ```sh
-   git tag -s path-parser-2.0.0 -m "release 2.0.0"
+   git tag -s path-parser-3.0.0 -m "release 3.0.0"
    git push origin master --tags
    ```
 
@@ -89,7 +97,7 @@ publiseres — den er kun for CI-verifisering av native-image-banen.
 5. **Bump til neste snapshot**:
 
    ```sh
-   mvn versions:set -DnewVersion=2.0.1-SNAPSHOT -DgenerateBackupPoms=false
+   mvn versions:set -DnewVersion=3.0.1-SNAPSHOT -DprocessAllModules=true -DgenerateBackupPoms=false
    git commit -am "prepare next development iteration"
    git push origin master
    ```
