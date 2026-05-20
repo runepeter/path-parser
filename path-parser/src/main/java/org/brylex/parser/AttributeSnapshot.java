@@ -1,11 +1,12 @@
 package org.brylex.parser;
 
 /**
- * Lett, mutbar projeksjon av attributtene pa et XML-start-element. Brukes for
- * a unnga per-element-allokering nar AttributeInvoker leser attributtverdier.
+ * Lett, mutbar projeksjon av attributtene på et XML-start-element. Brukes for
+ * å unngå per-element-allokering når AttributeBindingInvoker leser
+ * attributtverdier.
  *
- * Holdes ikke pa tvers av invoke-kall; ny snapshot per START-element der det
- * finnes AttributeInvoker-er.
+ * Holdes ikke på tvers av invoke-kall; ny snapshot per START-element der det
+ * finnes attributt-baserte invokere.
  */
 public final class AttributeSnapshot {
 

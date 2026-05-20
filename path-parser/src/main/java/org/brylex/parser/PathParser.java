@@ -7,161 +7,39 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
-import javax.xml.stream.events.XMLEvent;
 import java.io.InputStream;
 import java.io.Reader;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-public class PathParser {
+public final class PathParser {
 
-    private static final Pattern FILTER_PATTERN = Pattern.compile("(.+)\\[@(.+)=['\"]?([^'\"\\]]+)['\"]?\\]");
     private static final XMLInputFactory XML_INPUT_FACTORY = XMLInputFactory.newInstance();
 
-    private static final java.util.concurrent.ConcurrentHashMap<String, String[]> SEGMENT_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static final ClassValue<HandlerSpec> SPECS = new ClassValue<>() {
-        @Override
-        protected HandlerSpec computeValue(Class<?> type) {
-            return HandlerSpec.compile(type);
-        }
-    };
-
     private final ParseNode root;
-    private final Function<Class<?>, Object> factory;
+
+    private PathParser(ParseNode root) {
+        this.root = root;
+    }
 
     public static PathParser of(Object handler) {
         return of(handler, PathParser::defaultFactory);
     }
 
-    public static PathParser of(Object handler, java.util.function.Function<Class<?>, Object> subHandlerFactory) {
-        PathParserFactory generated = GeneratedFactoryRegistry.lookup(handler.getClass());
-        if (generated != null) {
-            return fromFactory(generated, handler, subHandlerFactory);
+    public static PathParser of(Object handler, Function<Class<?>, Object> subHandlerFactory) {
+        PathParserFactory factory = GeneratedFactoryRegistry.lookup(handler.getClass());
+        if (factory == null) {
+            throw new IllegalStateException(
+                    "Ingen generert parser for " + handler.getClass().getName()
+                            + ". Verifiser at path-parser-processor er aktivert i build-en, og at klassen ble rekompilert.");
         }
-        return new PathParser(handler, subHandlerFactory);   // refleksjons-fallback (fjernes i Phase 4)
-    }
-
-    private static PathParser fromFactory(PathParserFactory factory, Object handler,
-                                          java.util.function.Function<Class<?>, Object> subHandlerFactory) {
-        // bindFresh() returnerer et nytt tre per kall — unngår at lambdaer på den
-        // delte statiske TREE-en akkumuleres og fanger feil handler-instans
-        // (state-deling mellom etterfølgende PathParser.of(...)-kall for samme klasse).
         ParseNode freshTree = factory.bindFresh(handler, subHandlerFactory, GeneratedFactoryRegistry::lookup);
-        return new PathParser(freshTree, subHandlerFactory);
-    }
-
-    /** Constructor for APT-wired parsers: tree is already fully built, SPECS must not run. */
-    private PathParser(ParseNode root, java.util.function.Function<Class<?>, Object> factory) {
-        this.root = root;
-        this.factory = factory;
-    }
-
-    public PathParser(Object handler) {
-        this(handler, PathParser::defaultFactory);
-    }
-
-    public PathParser(Object handler, Function<Class<?>, Object> factory) {
-        this(new ParseNode("/", null, null), handler, factory);
-    }
-
-    PathParser(ParseNode root, Object handler, Function<Class<?>, Object> factory) {
-        this.root = root;
-        this.factory = factory;
-
-        SPECS.get(handler.getClass()).apply(this, handler);
-    }
-
-    void applyField(Field field, String path, Object handler) {
-        String[] segments = splitPath(path);
-        int leafIndex = segments.length - 1;
-        String leaf = segments[leafIndex];
-
-        if (leaf.startsWith("@")) {
-            ParseNode trunk = buildTrunk(segments, leafIndex);
-            trunk.startInvokers.add(new AttributeInvoker(leaf.substring(1), field, handler));
-            return;
-        }
-
-        ParseNode trunk = buildTrunk(segments, leafIndex);
-
-        Class<?> elementType = FieldInvoker.elementTypeOf(field);
-        if (elementType != null && !Conversions.canConvert(elementType)) {
-            ParseNode leafNode = addChild(trunk, leaf);
-            CreateInstanceInvoker creator = new CreateInstanceInvoker(elementType, factory);
-            leafNode.startInvokers.add(creator);
-            leafNode.endInvokers.add(new ApplySubParserInvoker(new FieldInvoker(field, handler), creator));
-            return;
-        }
-
-        ParseNode leafNode = addChild(trunk, leaf);
-        leafNode.endInvokers.add(new FieldInvoker(field, handler));
-        leafNode.needsText = true;
-    }
-
-    void applyMethod(Method method, String path, Object handler) {
-        String[] segments = splitPath(path);
-        int leafIndex = segments.length - 1;
-        String leaf = segments[leafIndex];
-        ParseNode trunk = buildTrunk(segments, leafIndex);
-
-        Class<?> parameterType = method.getParameterTypes()[0];
-
-        if (StartElement.class.isAssignableFrom(parameterType)) {
-            ParseNode leafNode = addChild(trunk, leaf);
-            leafNode.startInvokers.add(new MethodInvoker(method, handler));
-            leafNode.needsStartElement = true;
-        } else if (EndElement.class.isAssignableFrom(parameterType)) {
-            ParseNode leafNode = addChild(trunk, leaf);
-            leafNode.endInvokers.add(new MethodInvoker(method, handler));
-            leafNode.needsEndElement = true;
-        } else if (Conversions.canConvert(parameterType)) {
-            ParseNode leafNode = addChild(trunk, leaf);
-            leafNode.endInvokers.add(new MethodInvoker(method, handler));
-            leafNode.needsText = true;
-        } else {
-            ParseNode leafNode = addChild(trunk, leaf);
-            CreateInstanceInvoker creator = new CreateInstanceInvoker(parameterType, factory);
-            leafNode.startInvokers.add(creator);
-            leafNode.endInvokers.add(new ApplySubParserInvoker(new MethodInvoker(method, handler), creator));
-        }
-    }
-
-    private static String[] splitPath(String value) {
-        return SEGMENT_CACHE.computeIfAbsent(value, v -> v.split("/"));
-    }
-
-    private ParseNode buildTrunk(String[] segments, int endIndex) {
-        ParseNode current = root;
-        for (int i = 0; i < endIndex; i++) {
-            String segment = segments[i];
-            if (segment.isEmpty()) {
-                continue;
-            }
-            current = addChild(current, segment);
-        }
-        return current;
-    }
-
-    private static ParseNode addChild(ParseNode parent, String segment) {
-        int bracket = segment.indexOf('[');
-        if (bracket < 0) {
-            return parent.addChild(segment, null, null);
-        }
-        Matcher matcher = FILTER_PATTERN.matcher(segment);
-        if (!matcher.matches()) {
-            throw new IllegalArgumentException("Malformed path segment [" + segment + "].");
-        }
-        return parent.addChild(matcher.group(1), matcher.group(2), matcher.group(3));
+        return new PathParser(freshTree);
     }
 
     public void parse(InputStream input) {
         try {
             XMLStreamReader reader = XML_INPUT_FACTORY.createXMLStreamReader(input);
-            parse(reader);
+            parseLoop(reader);
             reader.close();
         } catch (XMLStreamException e) {
             throw new RuntimeException("Unable to parse stream.", e);
@@ -171,7 +49,7 @@ public class PathParser {
     public void parse(Reader input) {
         try {
             XMLStreamReader reader = XML_INPUT_FACTORY.createXMLStreamReader(input);
-            parse(reader);
+            parseLoop(reader);
             reader.close();
         } catch (XMLStreamException e) {
             throw new RuntimeException("Unable to parse stream.", e);
@@ -186,21 +64,12 @@ public class PathParser {
         }
     }
 
-    private static SubParseActivator findActivator(ParseNode node) {
-        for (int i = 0, n = node.startInvokers.size(); i < n; i++) {
-            Invoker inv = node.startInvokers.get(i);
-            if (inv instanceof SubParseActivator a) return a;
-        }
-        return null;
-    }
-
     private void parseLoop(XMLStreamReader reader) throws XMLStreamException {
         ParseNode parseTree = root;
 
         int stackCap = 8;
         ParseNode[] parseTreeStack = new ParseNode[stackCap];
         StringBuilder[] charStack = new StringBuilder[stackCap];
-        // APT sub-parse stacks: non-null slot means APT sub-parse is active at that depth
         SubParseActivator[] activatorStack = new SubParseActivator[stackCap];
         Object[] subInstanceStack = new Object[stackCap];
 
@@ -247,54 +116,25 @@ public class PathParser {
                     continue;
                 }
 
-                // Check for APT sub-parse activator before regular start-handler invocation
                 SubParseActivator activator = findActivator(child);
                 if (activator != null) {
-                    // APT sub-parse: create sub-instance, bind sub-factory, switch tree
                     Object subInstance = activator.instanceFactory().apply(activator.subType());
                     PathParserFactory subFactory = activator.factoryLookup().apply(activator.subType());
-                    if (subFactory != null) {
-                        // Use bindFresh to get a fresh tree (not the shared static TREE)
-                        // to avoid accumulating invokers across repeated sub-parses.
-                        ParseNode freshSubTree = subFactory.bindFresh(subInstance, activator.instanceFactory(), activator.factoryLookup());
-                        // Push current context
-                        parseTreeStack[depth] = parseTree;
-                        activatorStack[depth] = activator;
-                        subInstanceStack[depth] = subInstance;
-                        // Switch to fresh sub-tree root
-                        parseTree = freshSubTree;
-                        depth++;
-                    } else {
-                        // No generated factory — fall back to reflection (same as CreateInstanceInvoker path)
-                        boolean usedSubParser = invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
-                        if (usedSubParser) {
-                            invokeEndHandlers(child, null);
-                            continue;
-                        }
-                        parseTreeStack[depth] = parseTree;
-                        activatorStack[depth] = null;
-                        subInstanceStack[depth] = null;
-                        if (child.needsText) {
-                            StringBuilder sb = charStack[depth];
-                            if (sb == null) {
-                                charStack[depth] = new StringBuilder(32);
-                            } else {
-                                sb.setLength(0);
-                            }
-                        }
-                        parseTree = child;
-                        depth++;
+                    if (subFactory == null) {
+                        throw new IllegalStateException("Ingen generert factory for sub-handler-type "
+                                + activator.subType().getName());
                     }
+                    ParseNode freshSubTree = subFactory.bindFresh(subInstance,
+                            activator.instanceFactory(), activator.factoryLookup());
+                    parseTreeStack[depth] = parseTree;
+                    activatorStack[depth] = activator;
+                    subInstanceStack[depth] = subInstance;
+                    parseTree = freshSubTree;
+                    depth++;
                     continue;
                 }
 
-                boolean usedSubParser = invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
-
-                if (usedSubParser) {
-                    invokeEndHandlers(child, null);
-                    continue;
-                }
-
+                invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
                 parseTreeStack[depth] = parseTree;
                 activatorStack[depth] = null;
                 subInstanceStack[depth] = null;
@@ -318,124 +158,91 @@ public class PathParser {
                     ignore--;
                     continue;
                 }
-
-                // Check if this end-element closes an APT sub-parse frame
                 SubParseActivator doneActivator = activatorStack[depth];
                 if (doneActivator != null) {
-                    // APT sub-parse finished: apply sub-instance to parent
                     doneActivator.applyToParent().accept(subInstanceStack[depth]);
                     activatorStack[depth] = null;
                     subInstanceStack[depth] = null;
                     parseTree = parseTreeStack[depth];
                     continue;
                 }
-
                 StringBuilder text = parseTree.needsText ? charStack[depth] : null;
                 invokeEndHandlers(parseTree, text);
                 parseTree = parseTreeStack[depth];
 
-            } else if (type == XMLStreamConstants.CHARACTERS || type == XMLStreamConstants.CDATA || type == XMLStreamConstants.SPACE) {
+            } else if (type == XMLStreamConstants.CHARACTERS
+                    || type == XMLStreamConstants.CDATA
+                    || type == XMLStreamConstants.SPACE) {
                 if (depth > 0 && ignore == 0 && parseTree.needsText) {
-                    charStack[depth - 1].append(reader.getTextCharacters(), reader.getTextStart(), reader.getTextLength());
+                    charStack[depth - 1].append(reader.getTextCharacters(),
+                            reader.getTextStart(), reader.getTextLength());
                 }
             }
         }
     }
 
-    private boolean invokeStartHandlers(ParseNode node, XMLStreamReader reader,
-                                        int attrCount, String[] attrNames, String[] attrValues) {
-        if (node.startInvokers.isEmpty()) {
-            return false;
-        }
-        boolean usedSubParser = false;
-        StartElement startElement = null;
-        AttributeSnapshot snapshot = null;
-
+    private static SubParseActivator findActivator(ParseNode node) {
         for (int i = 0, n = node.startInvokers.size(); i < n; i++) {
-            Invoker invoker = node.startInvokers.get(i);
-            if (invoker instanceof CreateInstanceInvoker creator) {
-                creator.invoke(reader);
-                usedSubParser = true;
-            } else if (invoker instanceof AttributeInvoker attr) {
+            if (node.startInvokers.get(i) instanceof SubParseActivator a) return a;
+        }
+        return null;
+    }
+
+    private void invokeStartHandlers(ParseNode node, XMLStreamReader reader,
+                                     int attrCount, String[] attrNames, String[] attrValues) {
+        if (node.startInvokers.isEmpty()) return;
+        AttributeSnapshot snapshot = null;
+        StartElement startElement = null;
+        for (int i = 0, n = node.startInvokers.size(); i < n; i++) {
+            Invoker inv = node.startInvokers.get(i);
+            if (inv instanceof EventInvoker ev && ev.kind() == EventInvoker.Kind.START_ELEMENT) {
+                if (startElement == null) {
+                    startElement = buildStartElement(reader, attrCount, attrNames, attrValues);
+                }
+                inv.invoke(startElement);
+                continue;
+            }
+            if (inv instanceof AttributeBindingInvoker) {
                 if (snapshot == null) {
                     snapshot = new AttributeSnapshot(attrCount, attrNames, attrValues);
                 }
-                attr.invoke(snapshot);
-            } else if (invoker instanceof AttributeBindingInvoker bindAttr) {
-                if (snapshot == null) {
-                    snapshot = new AttributeSnapshot(attrCount, attrNames, attrValues);
-                }
-                bindAttr.invoke(snapshot);
-            } else if (invoker instanceof MethodInvoker method) {
-                if (node.needsStartElement) {
-                    if (startElement == null) {
-                        startElement = buildStartElement(reader, attrCount, attrNames, attrValues);
-                    }
-                    method.invoke(startElement);
-                }
-            } else if (invoker instanceof EventInvoker ev) {
-                if (ev.kind() == EventInvoker.Kind.START_ELEMENT) {
-                    if (startElement == null) startElement = buildStartElement(reader, attrCount, attrNames, attrValues);
-                    ev.invoke(startElement);
-                }
+                inv.invoke(snapshot);
             }
         }
-        return usedSubParser;
     }
 
     private void invokeEndHandlers(ParseNode node, StringBuilder text) {
-        if (node.endInvokers.isEmpty()) {
-            return;
-        }
-        String textValue = null;
+        if (node.endInvokers.isEmpty()) return;
+        String textValue = text == null ? "" : text.toString();
         EndElement endElement = null;
-
         for (int i = 0, n = node.endInvokers.size(); i < n; i++) {
-            Invoker invoker = node.endInvokers.get(i);
-            if (invoker instanceof ApplySubParserInvoker apply) {
-                apply.fire();
-            } else if (invoker instanceof MethodInvoker method && node.needsEndElement && EndElement.class.isAssignableFrom(method.argumentType())) {
-                if (endElement == null) {
-                    endElement = buildEndElement(node.name);
-                }
-                method.invoke(endElement);
-            } else if (invoker instanceof EventInvoker ev && ev.kind() == EventInvoker.Kind.END_ELEMENT) {
+            Invoker inv = node.endInvokers.get(i);
+            if (inv instanceof EventInvoker ev && ev.kind() == EventInvoker.Kind.END_ELEMENT) {
                 if (endElement == null) endElement = buildEndElement(node.name);
-                ev.invoke(endElement);
-            } else {
-                if (textValue == null) {
-                    textValue = text == null ? "" : text.toString();
-                }
-                invoker.invoke(textValue);
+                inv.invoke(endElement);
+                continue;
             }
+            inv.invoke(textValue);
         }
     }
 
-    private static StartElement buildStartElement(XMLStreamReader reader, int attrCount, String[] attrNames, String[] attrValues) {
+    private static StartElement buildStartElement(XMLStreamReader reader,
+                                                  int attrCount, String[] attrNames, String[] attrValues) {
         javax.xml.stream.XMLEventFactory factory = javax.xml.stream.XMLEventFactory.newInstance();
         java.util.List<javax.xml.stream.events.Attribute> attrs = new java.util.ArrayList<>(attrCount);
         for (int i = 0; i < attrCount; i++) {
             attrs.add(factory.createAttribute(new QName(attrNames[i]), attrValues[i]));
         }
-        return factory.createStartElement(new QName(reader.getNamespaceURI(), reader.getLocalName()), attrs.iterator(), java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
+        return factory.createStartElement(
+                new QName(reader.getNamespaceURI(), reader.getLocalName()),
+                attrs.iterator(),
+                java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
     }
 
     private static EndElement buildEndElement(String name) {
         javax.xml.stream.XMLEventFactory factory = javax.xml.stream.XMLEventFactory.newInstance();
-        return factory.createEndElement(new QName(name), java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
-    }
-
-    private static int grow(int cap) {
-        return cap * 2;
-    }
-
-    private static <T> T[] grow(T[] arr, int newCap) {
-        T[] copy = java.util.Arrays.copyOf(arr, newCap);
-        return copy;
-    }
-
-    private static String[] grow(String[] arr, int newCap) {
-        return java.util.Arrays.copyOf(arr, newCap);
+        return factory.createEndElement(new QName(name),
+                java.util.Collections.<javax.xml.stream.events.Namespace>emptyIterator());
     }
 
     private static Object defaultFactory(Class<?> type) {
