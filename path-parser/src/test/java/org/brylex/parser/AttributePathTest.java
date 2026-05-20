@@ -8,9 +8,9 @@ import java.io.StringReader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class AttributePathTest {
+public class AttributePathTest {
 
-    static class OrderAttrs {
+    public static class OrderAttrs {
         @Path("/order/@id") String id;
         @Path("/order/@total") int total;
     }
@@ -25,7 +25,7 @@ class AttributePathTest {
         assertThat(order.total).isEqualTo(42);
     }
 
-    static class NestedAttr {
+    public static class NestedAttr {
         @Path("/order/customer/@type") String customerType;
         @Path("/order/customer") String customer;
     }
@@ -40,7 +40,7 @@ class AttributePathTest {
         assertThat(handler.customer).isEqualTo("Alice");
     }
 
-    static class MissingAttr {
+    public static class MissingAttr {
         @Path("/order/@id") String id;
         @Path("/order/@missing") String missing;
     }

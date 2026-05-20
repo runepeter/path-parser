@@ -9,9 +9,9 @@ import java.io.StringReader;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class EdgeCasesTest {
+public class EdgeCasesTest {
 
-    static class Holder {
+    public static class Holder {
         @Path("/x/value") String value;
     }
 
@@ -64,7 +64,7 @@ class EdgeCasesTest {
                 .isInstanceOf(RuntimeException.class);
     }
 
-    static class MultiAttribute {
+    public static class MultiAttribute {
         @Path("/order/@id") String id;
         @Path("/order/@status") String status;
         @Path("/order/@total") int total;
@@ -79,7 +79,7 @@ class EdgeCasesTest {
         assertThat(h.total).isEqualTo(99);
     }
 
-    static class TextWithAttribute {
+    public static class TextWithAttribute {
         @Path("/x/item/@id") String itemId;
         @Path("/x/item") String itemText;
     }

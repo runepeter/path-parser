@@ -33,6 +33,8 @@ public final class RegistryCodeGenerator {
                 ParameterizedTypeName.get(ClassName.get(Class.class), WildcardTypeName.subtypeOf(Object.class)),
                 factory);
 
+        ClassName hashMap = ClassName.get("java.util", "HashMap");
+
         MethodSpec.Builder factoriesMethod = MethodSpec.methodBuilder("factories")
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
@@ -41,16 +43,15 @@ public final class RegistryCodeGenerator {
         if (models.isEmpty()) {
             factoriesMethod.addStatement("return $T.of()", Map.class);
         } else {
-            CodeBlock.Builder mapBuild = CodeBlock.builder().add("$T.of(", Map.class);
-            for (int i = 0; i < models.size(); i++) {
-                HandlerModel m = models.get(i);
-                ClassName handler = ClassName.get(m.packageName(), m.simpleName());
+            factoriesMethod.addStatement("$T<$T, $T> m = new $T<>()", Map.class,
+                    ParameterizedTypeName.get(ClassName.get(Class.class), WildcardTypeName.subtypeOf(Object.class)),
+                    factory, hashMap);
+            for (HandlerModel m : models) {
+                ClassName handler = ClassName.get(m.handlerType());
                 ClassName generated = ClassName.get(m.packageName(), m.generatedClassName());
-                if (i > 0) mapBuild.add(", ");
-                mapBuild.add("$T.class, new $T()", handler, generated);
+                factoriesMethod.addStatement("m.put($T.class, new $T())", handler, generated);
             }
-            mapBuild.add(")");
-            factoriesMethod.addStatement("return $L", mapBuild.build());
+            factoriesMethod.addStatement("return m");
         }
 
         MethodSpec fingerprintMethod = MethodSpec.methodBuilder("fingerprint")

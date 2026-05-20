@@ -12,7 +12,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class FactoryTest {
+public class FactoryTest {
 
     public static class Item {
         @Path("/name") String name;

@@ -12,7 +12,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MethodParameterConversionTest {
+public class MethodParameterConversionTest {
 
     public static class Capturing {
         final List<Object> calls = new ArrayList<>();

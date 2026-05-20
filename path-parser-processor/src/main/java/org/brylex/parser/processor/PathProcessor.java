@@ -33,6 +33,7 @@ public class PathProcessor extends AbstractProcessor {
             }
             for (TypeElement type : handlerTypes) {
                 HandlerModel model = builder.build(type);
+                if (model.bindings().isEmpty()) continue; // no APT-supported bindings, skip
                 try {
                     generator.generate(model);
                     collected.add(model);

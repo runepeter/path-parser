@@ -6,12 +6,12 @@ import java.util.ServiceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RegistryLookupTest {
+public class RegistryLookupTest {
 
     @Test
-    void serviceLoaderFinnsTomMengdeUtenRegistries() {
+    void serviceLoaderFinnrAPTGenerertRegistry() {
         long count = ServiceLoader.load(PathParserFactoryRegistry.class, getClass().getClassLoader())
                 .stream().count();
-        assertThat(count).isZero();
+        assertThat(count).isGreaterThanOrEqualTo(1);
     }
 }

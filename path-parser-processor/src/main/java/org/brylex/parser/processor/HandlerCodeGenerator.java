@@ -16,8 +16,22 @@ public final class HandlerCodeGenerator {
         this.env = env;
     }
 
+    /** Convert an arbitrary path segment into a valid Java identifier fragment. */
+    private static String toJavaIdent(String segment) {
+        StringBuilder sb = new StringBuilder();
+        for (char c : segment.toCharArray()) {
+            if (Character.isLetterOrDigit(c) || c == '_') {
+                sb.append(c);
+            } else {
+                sb.append('_');
+            }
+        }
+        return sb.toString();
+    }
+
     public void generate(HandlerModel model) throws IOException {
-        ClassName handlerClass = ClassName.get(model.packageName(), model.simpleName());
+        // Use the TypeElement directly so JavaPoet generates correct nested-class notation (Outer.Inner)
+        ClassName handlerClass = ClassName.get(model.handlerType());
         ClassName parseNode = ClassName.get("org.brylex.parser", "ParseNode");
         ClassName factoryIface = ClassName.get("org.brylex.parser", "PathParserFactory");
         ClassName invokerSet = ClassName.get("org.brylex.parser", "InvokerSet");
@@ -29,6 +43,7 @@ public final class HandlerCodeGenerator {
                 .returns(parseNode)
                 .addStatement("$T root = new $T($S, null, null)", parseNode, parseNode, "/");
 
+        java.util.Set<String> declaredVars = new java.util.LinkedHashSet<>();
         for (Binding b : model.bindings()) {
             if (!(b instanceof Binding.FieldText ft)) continue;
             String[] segments = ft.path().split("/");
@@ -36,10 +51,13 @@ public final class HandlerCodeGenerator {
             StringBuilder varName = new StringBuilder("n");
             for (String segment : segments) {
                 if (segment.isEmpty()) continue;
-                varName.append("_").append(segment);
-                buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
-                        parseNode, varName.toString(), parent, segment);
-                parent = varName.toString();
+                varName.append("_").append(toJavaIdent(segment));
+                String var = varName.toString();
+                if (declaredVars.add(var)) {
+                    buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                            parseNode, var, parent, segment);
+                }
+                parent = var;
             }
             buildTree.addStatement("$L.needsText = true", parent);
         }

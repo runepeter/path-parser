@@ -12,9 +12,9 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class CollectionPathTest {
+public class CollectionPathTest {
 
-    static class StringList {
+    public static class StringList {
         @Path("/items/item") List<String> items;
     }
 
@@ -27,7 +27,7 @@ class CollectionPathTest {
         assertThat(handler.items).containsExactly("A", "B", "C");
     }
 
-    static class IntegerList {
+    public static class IntegerList {
         @Path("/numbers/n") List<Integer> values;
     }
 
@@ -40,7 +40,7 @@ class CollectionPathTest {
         assertThat(handler.values).containsExactly(1, 2, 3);
     }
 
-    static class PreInitialised {
+    public static class PreInitialised {
         @Path("/items/item") final List<String> items = new ArrayList<>();
     }
 
@@ -53,7 +53,7 @@ class CollectionPathTest {
         assertThat(handler.items).containsExactly("A", "B");
     }
 
-    static class StringSet {
+    public static class StringSet {
         @Path("/items/item") Set<String> items;
     }
 
@@ -67,7 +67,7 @@ class CollectionPathTest {
         assertThat(handler.items).isInstanceOf(LinkedHashSet.class);
     }
 
-    static class EmptyMatches {
+    public static class EmptyMatches {
         @Path("/items/item") List<String> items;
     }
 

@@ -11,11 +11,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class TypeConversionTest {
+public class TypeConversionTest {
 
     enum Status { ACTIVE, INACTIVE }
 
-    static class Order {
+    public static class Order {
         @Path("/order/quantity") int quantity;
         @Path("/order/price") BigDecimal price;
         @Path("/order/active") boolean active;
@@ -46,7 +46,7 @@ class TypeConversionTest {
         assertThat(order.status).isEqualTo(Status.ACTIVE);
     }
 
-    static class Defaults {
+    public static class Defaults {
         @Path("/order/missing") int missing;
         @Path("/order/quantity") int quantity;
     }

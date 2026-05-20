@@ -7,7 +7,7 @@ import java.io.StringReader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class PathParserOfApiTest {
+public class PathParserOfApiTest {
 
     public static class SimpleHandler {
         @Path("/root/child")
