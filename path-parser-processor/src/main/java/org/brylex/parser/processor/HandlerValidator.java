@@ -16,14 +16,29 @@ public final class HandlerValidator {
 
     public boolean validate(HandlerModel model) {
         boolean ok = true;
-        Map<String, Binding> seen = new HashMap<>();
+        Map<String, Binding> seenScalar = new HashMap<>();   // for FieldText/MethodText/Collection/SubHandler
+        Map<String, Binding> seenAttr = new HashMap<>();      // for Attribute, keyed by path+"|"+attrName
+        Map<String, Binding> seenEvent = new HashMap<>();     // for MethodEvent, keyed by path+"|"+kind
+
         for (Binding b : model.bindings()) {
             if (b.path().isEmpty()) {
                 err(b.element(), "@Path-verdien kan ikke være tom.");
                 ok = false;
                 continue;
             }
-            Binding prior = seen.put(b.path(), b);
+            String key;
+            Map<String, Binding> bucket;
+            if (b instanceof Binding.Attribute attr) {
+                key = b.path() + "|" + attr.attrName();
+                bucket = seenAttr;
+            } else if (b instanceof Binding.MethodEvent ev) {
+                key = b.path() + "|" + ev.eventKind();
+                bucket = seenEvent;
+            } else {
+                key = b.path();
+                bucket = seenScalar;
+            }
+            Binding prior = bucket.put(key, b);
             if (prior != null) {
                 err(b.element(),
                         "@Path('" + b.path() + "') deklareres to ganger i "
