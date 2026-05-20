@@ -98,6 +98,14 @@ Erstatt `X.Y.Z` med den faktiske versjonen i kommandoene under
 
    ```sh
    mvn versions:set -DnewVersion=3.0.1-SNAPSHOT -DprocessAllModules=true -DgenerateBackupPoms=false
+   ```
+
+   `examples/native-image-smoke/pom.xml` er **utenfor reactoren** og må
+   bumpes manuelt — oppdater `<pp.version>`-propertyen til samme nye
+   verdi, ellers feiler native-image-CI-jobben på neste master-push:
+
+   ```sh
+   sed -i '' 's|<pp.version>.*</pp.version>|<pp.version>3.0.1-SNAPSHOT</pp.version>|' examples/native-image-smoke/pom.xml
    git commit -am "prepare next development iteration"
    git push origin master
    ```
