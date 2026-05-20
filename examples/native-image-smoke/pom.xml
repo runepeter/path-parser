@@ -11,13 +11,17 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Smoke-prosjektet er utenfor reactoren, så versions:set treffer det
+             ikke. Hold pp.version i tråd med rot-pom-en sin versjon ved hver
+             bump. Bare ett sted å oppdatere. -->
+        <pp.version>3.0.1-SNAPSHOT</pp.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.brylex</groupId>
             <artifactId>path-parser</artifactId>
-            <version>3.0.0-SNAPSHOT</version>
+            <version>${pp.version}</version>
         </dependency>
     </dependencies>
 
@@ -32,7 +36,7 @@
                         <path>
                             <groupId>org.brylex</groupId>
                             <artifactId>path-parser-processor</artifactId>
-                            <version>3.0.0-SNAPSHOT</version>
+                            <version>${pp.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
