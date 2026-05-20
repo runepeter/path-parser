@@ -9,7 +9,7 @@ public sealed interface Binding {
 
     Element element();
 
-    record FieldText(String path, Element element, String fieldName, String fieldType) implements Binding {
+    record FieldText(String path, Element element, String fieldName, String fieldType, boolean isPrivate) implements Binding {
     }
 
     record MethodText(String path, Element element, String methodName, String paramType) implements Binding {

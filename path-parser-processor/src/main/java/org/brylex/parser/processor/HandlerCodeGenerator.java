@@ -352,7 +352,28 @@ public final class HandlerCodeGenerator {
                               .append("\", \"").append(parsed[2]).append("\")");
                     }
                 }
-                if ("java.lang.String".equals(ft.fieldType())) {
+                if (ft.isPrivate()) {
+                    ClassName varHandleClass = ClassName.get("java.lang.invoke", "VarHandle");
+                    ClassName methodHandlesClass = ClassName.get("java.lang.invoke", "MethodHandles");
+                    ClassName boxed = boxedClassName(ft);
+                    String vhVar = "VH_" + ft.fieldName();
+                    bind.addStatement("$T $L", varHandleClass, vhVar);
+                    bind.beginControlFlow("try");
+                    bind.addStatement("$L = $T.privateLookupIn($T.class, $T.lookup()).findVarHandle($T.class, $S, $T.class)",
+                            vhVar, methodHandlesClass, handlerClass, methodHandlesClass, handlerClass,
+                            ft.fieldName(), boxed);
+                    bind.nextControlFlow("catch ($T e)", ReflectiveOperationException.class);
+                    bind.addStatement("throw new $T($S, e)", RuntimeException.class,
+                            "Kunne ikke binde private felt '" + ft.fieldName() + "'");
+                    bind.endControlFlow();
+                    if ("java.lang.String".equals(ft.fieldType())) {
+                        bind.addStatement("$L.endInvokers.add(new $T(text -> $L.set(h, text)))",
+                                lookup.toString(), textInvoker, vhVar);
+                    } else {
+                        bind.addStatement("$L.endInvokers.add(new $T(text -> $L.set(h, ($T) $T.convert(text, $T.class))))",
+                                lookup.toString(), textInvoker, vhVar, boxed, conversions, boxed);
+                    }
+                } else if ("java.lang.String".equals(ft.fieldType())) {
                     bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
                             lookup.toString(), textInvoker, ft.fieldName());
                 } else {
@@ -538,7 +559,28 @@ public final class HandlerCodeGenerator {
                               .append("\", \"").append(parsed[2]).append("\")");
                     }
                 }
-                if ("java.lang.String".equals(ft.fieldType())) {
+                if (ft.isPrivate()) {
+                    ClassName varHandleClass = ClassName.get("java.lang.invoke", "VarHandle");
+                    ClassName methodHandlesClass = ClassName.get("java.lang.invoke", "MethodHandles");
+                    ClassName boxed = boxedClassName(ft);
+                    String vhVar = "VH_" + ft.fieldName();
+                    bindFresh.addStatement("$T $L", varHandleClass, vhVar);
+                    bindFresh.beginControlFlow("try");
+                    bindFresh.addStatement("$L = $T.privateLookupIn($T.class, $T.lookup()).findVarHandle($T.class, $S, $T.class)",
+                            vhVar, methodHandlesClass, handlerClass, methodHandlesClass, handlerClass,
+                            ft.fieldName(), boxed);
+                    bindFresh.nextControlFlow("catch ($T e)", ReflectiveOperationException.class);
+                    bindFresh.addStatement("throw new $T($S, e)", RuntimeException.class,
+                            "Kunne ikke binde private felt '" + ft.fieldName() + "'");
+                    bindFresh.endControlFlow();
+                    if ("java.lang.String".equals(ft.fieldType())) {
+                        bindFresh.addStatement("$L.endInvokers.add(new $T(text -> $L.set(h, text)))",
+                                lookup.toString(), textInvoker, vhVar);
+                    } else {
+                        bindFresh.addStatement("$L.endInvokers.add(new $T(text -> $L.set(h, ($T) $T.convert(text, $T.class))))",
+                                lookup.toString(), textInvoker, vhVar, boxed, conversions, boxed);
+                    }
+                } else if ("java.lang.String".equals(ft.fieldType())) {
                     bindFresh.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
                             lookup.toString(), textInvoker, ft.fieldName());
                 } else {

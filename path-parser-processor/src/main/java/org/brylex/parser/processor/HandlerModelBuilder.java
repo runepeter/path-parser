@@ -119,7 +119,8 @@ public final class HandlerModelBuilder {
                             field.getSimpleName().toString(), fieldType, lastSegment.substring(1)));
                     continue;
                 }
-                bindings.add(new Binding.FieldText(pathValue, field, field.getSimpleName().toString(), fieldType));
+                boolean isPrivate = field.getModifiers().contains(javax.lang.model.element.Modifier.PRIVATE);
+                bindings.add(new Binding.FieldText(pathValue, field, field.getSimpleName().toString(), fieldType, isPrivate));
             } else if (member.getKind() == ElementKind.METHOD) {
                 ExecutableElement method = (ExecutableElement) member;
                 if (method.getParameters().size() != 1) continue;
