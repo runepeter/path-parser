@@ -51,6 +51,26 @@ public final class HandlerModelBuilder {
         return false;
     }
 
+    /** Returns true if a bare (non-generic) type name can be handled by Conversions.convert(). */
+    private boolean isConvertibleFieldType(String typeName) {
+        return SUPPORTED_TYPES.contains(typeName);
+    }
+
+    private static boolean isCollectionType(String typeName) {
+        return typeName.startsWith("java.util.List")
+                || typeName.startsWith("java.util.Set")
+                || typeName.startsWith("java.util.Queue")
+                || typeName.startsWith("java.util.Collection");
+    }
+
+    private String elementTypeOf(VariableElement field) {
+        javax.lang.model.type.TypeMirror mirror = field.asType();
+        if (mirror instanceof javax.lang.model.type.DeclaredType dt && !dt.getTypeArguments().isEmpty()) {
+            return dt.getTypeArguments().get(0).toString();
+        }
+        return "java.lang.String";
+    }
+
     public HandlerModel build(TypeElement type) {
         List<Binding> bindings = new ArrayList<>();
         for (Element member : type.getEnclosedElements()) {
@@ -59,13 +79,25 @@ public final class HandlerModelBuilder {
             if (member.getKind() == ElementKind.FIELD) {
                 VariableElement field = (VariableElement) member;
                 String fieldType = field.asType().toString();
-                if (!isConvertibleFieldType(field)) {
-                    // Non-convertible types (collections, generics, unknown types) are left for reflection.
-                    continue;
-                }
                 String pathValue = path.value();
                 int lastSlash = pathValue.lastIndexOf('/');
                 String lastSegment = pathValue.substring(lastSlash + 1);
+
+                // Detect collection fields before the convertible-type check.
+                if (isCollectionType(fieldType)) {
+                    String elemType = elementTypeOf(field);
+                    if (isConvertibleFieldType(elemType)) {
+                        bindings.add(new Binding.Collection(pathValue, field, field.getSimpleName().toString(),
+                                fieldType, elemType));
+                    }
+                    // Non-convertible element type → Task 3.7 (sub-handler collection). Skip for now.
+                    continue;
+                }
+
+                if (!isConvertibleFieldType(field)) {
+                    // Non-convertible types (generics, unknown types) are left for reflection.
+                    continue;
+                }
                 if (lastSegment.startsWith("@")) {
                     String parentPath = pathValue.substring(0, lastSlash);
                     if (parentPath.isEmpty()) parentPath = "/";

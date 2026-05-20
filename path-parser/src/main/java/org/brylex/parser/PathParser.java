@@ -48,7 +48,14 @@ public class PathParser {
     private static PathParser fromFactory(PathParserFactory factory, Object handler,
                                           java.util.function.Function<Class<?>, Object> subHandlerFactory) {
         factory.bind(handler, subHandlerFactory, GeneratedFactoryRegistry::lookup);
-        return new PathParser(factory.tree(), handler, subHandlerFactory);
+        // Use the APT-wired tree directly — skip reflection-based SPECS to avoid double-wiring.
+        return new PathParser(factory.tree(), subHandlerFactory);
+    }
+
+    /** Constructor for APT-wired parsers: tree is already fully built, SPECS must not run. */
+    private PathParser(ParseNode root, java.util.function.Function<Class<?>, Object> factory) {
+        this.root = root;
+        this.factory = factory;
     }
 
     public PathParser(Object handler) {
@@ -284,6 +291,11 @@ public class PathParser {
                     snapshot = new AttributeSnapshot(attrCount, attrNames, attrValues);
                 }
                 attr.invoke(snapshot);
+            } else if (invoker instanceof AttributeBindingInvoker bindAttr) {
+                if (snapshot == null) {
+                    snapshot = new AttributeSnapshot(attrCount, attrNames, attrValues);
+                }
+                bindAttr.invoke(snapshot);
             } else if (invoker instanceof MethodInvoker method) {
                 if (node.needsStartElement) {
                     if (startElement == null) {

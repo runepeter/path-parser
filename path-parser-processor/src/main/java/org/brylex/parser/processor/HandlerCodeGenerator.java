@@ -42,6 +42,28 @@ public final class HandlerCodeGenerator {
         return boxedClassNameForType(attr.fieldType(), attr.element());
     }
 
+    private static String collectionInitFor(String type) {
+        if (type.startsWith("java.util.List") || type.startsWith("java.util.Collection"))
+            return "new java.util.ArrayList<>()";
+        if (type.startsWith("java.util.Set")) return "new java.util.LinkedHashSet<>()";
+        if (type.startsWith("java.util.Queue")) return "new java.util.ArrayDeque<>()";
+        throw new IllegalArgumentException("Ustøttet collection-type: " + type);
+    }
+
+    private static String boxedTypeLiteral(String typeName) {
+        return switch (typeName) {
+            case "int"     -> "java.lang.Integer";
+            case "long"    -> "java.lang.Long";
+            case "short"   -> "java.lang.Short";
+            case "byte"    -> "java.lang.Byte";
+            case "double"  -> "java.lang.Double";
+            case "float"   -> "java.lang.Float";
+            case "boolean" -> "java.lang.Boolean";
+            case "char"    -> "java.lang.Character";
+            default        -> typeName;
+        };
+    }
+
     private ClassName boxedClassNameForType(String fieldType, javax.lang.model.element.Element element) {
         return switch (fieldType) {
             case "int"     -> ClassName.get("java.lang", "Integer");
@@ -156,6 +178,34 @@ public final class HandlerCodeGenerator {
                     parent = var;
                 }
                 buildTree.addStatement("$L.needsStartElement = true", parent);
+            } else if (b instanceof Binding.Collection coll) {
+                String[] segments = coll.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
+                    }
+                    parent = var;
+                }
+                buildTree.addStatement("$L.needsText = true", parent);
             }
         }
         buildTree.addStatement("return root");
@@ -247,6 +297,41 @@ public final class HandlerCodeGenerator {
                     bind.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = ($T) $T.convert(value, $T.class)))",
                             lookup.toString(), attributeBindingInvoker, attr.attrName(),
                             attributeSnapshot, String.class, attr.fieldName(), boxed, conversions, boxed);
+                }
+            } else if (b instanceof Binding.Collection coll) {
+                String[] segments = coll.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String elemType = coll.elementType();
+                String boxedElem = boxedTypeLiteral(elemType);
+                String initExpr = collectionInitFor(coll.collectionType());
+                String addExpr = "java.lang.String".equals(elemType)
+                        ? "text"
+                        : "(" + boxedElem + ") org.brylex.parser.Conversions.convert(text, " + boxedElem + ".class)";
+                boolean isFinal = coll.element().getModifiers()
+                        .contains(javax.lang.model.element.Modifier.FINAL);
+                if (isFinal) {
+                    // Final field is pre-initialized by the user — just add to the existing collection.
+                    bind.addStatement("$L.endInvokers.add(new $T(text -> { h.$L.add($L); }))",
+                            lookup.toString(),
+                            textInvoker,
+                            coll.fieldName(), addExpr);
+                } else {
+                    bind.addStatement("$L.endInvokers.add(new $T(text -> { if (h.$L == null) h.$L = $L; h.$L.add($L); }))",
+                            lookup.toString(),
+                            textInvoker,
+                            coll.fieldName(), coll.fieldName(), initExpr,
+                            coll.fieldName(), addExpr);
                 }
             }
         }
