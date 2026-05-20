@@ -34,11 +34,21 @@ public class PathParser {
     private final Function<Class<?>, Object> factory;
 
     public static PathParser of(Object handler) {
-        return new PathParser(handler);
+        return of(handler, PathParser::defaultFactory);
     }
 
     public static PathParser of(Object handler, java.util.function.Function<Class<?>, Object> subHandlerFactory) {
-        return new PathParser(handler, subHandlerFactory);
+        PathParserFactory generated = GeneratedFactoryRegistry.lookup(handler.getClass());
+        if (generated != null) {
+            return fromFactory(generated, handler, subHandlerFactory);
+        }
+        return new PathParser(handler, subHandlerFactory);   // refleksjons-fallback (fjernes i Phase 4)
+    }
+
+    private static PathParser fromFactory(PathParserFactory factory, Object handler,
+                                          java.util.function.Function<Class<?>, Object> subHandlerFactory) {
+        factory.bind(handler, subHandlerFactory, GeneratedFactoryRegistry::lookup);
+        return new PathParser(factory.tree(), handler, subHandlerFactory);
     }
 
     public PathParser(Object handler) {
