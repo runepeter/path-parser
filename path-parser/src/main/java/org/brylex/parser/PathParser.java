@@ -47,9 +47,11 @@ public class PathParser {
 
     private static PathParser fromFactory(PathParserFactory factory, Object handler,
                                           java.util.function.Function<Class<?>, Object> subHandlerFactory) {
-        factory.bind(handler, subHandlerFactory, GeneratedFactoryRegistry::lookup);
-        // Use the APT-wired tree directly — skip reflection-based SPECS to avoid double-wiring.
-        return new PathParser(factory.tree(), subHandlerFactory);
+        // bindFresh() returnerer et nytt tre per kall — unngår at lambdaer på den
+        // delte statiske TREE-en akkumuleres og fanger feil handler-instans
+        // (state-deling mellom etterfølgende PathParser.of(...)-kall for samme klasse).
+        ParseNode freshTree = factory.bindFresh(handler, subHandlerFactory, GeneratedFactoryRegistry::lookup);
+        return new PathParser(freshTree, subHandlerFactory);
     }
 
     /** Constructor for APT-wired parsers: tree is already fully built, SPECS must not run. */
