@@ -45,12 +45,8 @@
             <artifactId>jaxb-runtime</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.brylex</groupId>
-            <artifactId>path-parser-processor</artifactId>
-            <version>3.0.0-SNAPSHOT</version>
-            <scope>test</scope>
-        </dependency>
+        <!-- path-parser-processor er IKKE en dependency — det vil skape cyclic reactor.
+             APT-bruk skjer via maven-compiler-plugin sin annotationProcessorPaths under. -->
     </dependencies>
 
     <build>
