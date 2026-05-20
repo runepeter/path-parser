@@ -24,6 +24,7 @@ public class PathProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         HandlerModelBuilder builder = new HandlerModelBuilder(processingEnv);
         HandlerCodeGenerator generator = new HandlerCodeGenerator(processingEnv);
+        HandlerValidator validator = new HandlerValidator(processingEnv);
 
         for (TypeElement annotation : annotations) {
             Set<TypeElement> handlerTypes = new LinkedHashSet<>();
@@ -34,6 +35,7 @@ public class PathProcessor extends AbstractProcessor {
             for (TypeElement type : handlerTypes) {
                 HandlerModel model = builder.build(type);
                 if (model.bindings().isEmpty()) continue; // no APT-supported bindings, skip
+                if (!validator.validate(model)) continue; // skip codegen for invalid models
                 try {
                     generator.generate(model);
                     collected.add(model);
