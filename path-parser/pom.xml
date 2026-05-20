@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.brylex</groupId>
         <artifactId>path-parser-parent</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>3.0.0</version>
     </parent>
 
     <artifactId>path-parser</artifactId>
