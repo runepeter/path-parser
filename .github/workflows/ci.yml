@@ -21,10 +21,12 @@ jobs:
 
       # path-parser-processor må eksistere i ~/.m2 før path-parser sin testCompile
       # (som bruker processoren via annotationProcessorPaths) kan kjøre. Pass 1
-      # bygger og installerer begge moduler uten testCompile (-DskipTests skipper
-      # både test-compile og test). Pass 2 kjører full verify mot installerte artefakter.
-      - name: Bootstrap install (skip tests so processor blir tilgjengelig)
-        run: mvn -B -ntp -DskipTests install
+      # hopper over testCompile-fasen helt (-Dmaven.test.skip skipper compile +
+      # eksekvering; -DskipTests alene skipper KUN eksekvering og kjører testCompile,
+      # som ville krevd processoren). Pass 2 kjører full verify mot installert
+      # processor.
+      - name: Bootstrap install (hopp over tester for å installere processoren)
+        run: mvn -B -ntp -Dmaven.test.skip=true install
 
       - name: Build and test
         run: mvn -B -ntp verify
