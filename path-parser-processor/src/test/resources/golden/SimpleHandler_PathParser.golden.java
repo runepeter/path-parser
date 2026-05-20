@@ -41,4 +41,13 @@ public final class SimpleHandler_PathParser implements PathParserFactory {
     TREE.lookupChild("root", 0, null, null).lookupChild("child", 0, null, null).endInvokers.add(new TextInvoker(text -> h.child = text));
     return new InvokerSet(handler, Map.of());
   }
+
+  @Override
+  public ParseNode bindFresh(Object handler, Function<Class<?>, Object> subHandlerFactory,
+      Function<Class<?>, PathParserFactory> subFactoryLookup) {
+    ParseNode freshTree = buildTree();
+    SimpleHandler h = (SimpleHandler) handler;
+    freshTree.lookupChild("root", 0, null, null).lookupChild("child", 0, null, null).endInvokers.add(new TextInvoker(text -> h.child = text));
+    return freshTree;
+  }
 }

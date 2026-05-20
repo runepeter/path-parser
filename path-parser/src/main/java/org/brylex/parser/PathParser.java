@@ -184,12 +184,23 @@ public class PathParser {
         }
     }
 
+    private static SubParseActivator findActivator(ParseNode node) {
+        for (int i = 0, n = node.startInvokers.size(); i < n; i++) {
+            Invoker inv = node.startInvokers.get(i);
+            if (inv instanceof SubParseActivator a) return a;
+        }
+        return null;
+    }
+
     private void parseLoop(XMLStreamReader reader) throws XMLStreamException {
         ParseNode parseTree = root;
 
         int stackCap = 8;
         ParseNode[] parseTreeStack = new ParseNode[stackCap];
         StringBuilder[] charStack = new StringBuilder[stackCap];
+        // APT sub-parse stacks: non-null slot means APT sub-parse is active at that depth
+        SubParseActivator[] activatorStack = new SubParseActivator[stackCap];
+        Object[] subInstanceStack = new Object[stackCap];
 
         int depth = 0;
         int ignore = 0;
@@ -216,6 +227,8 @@ public class PathParser {
                     int newCap = stackCap * 2;
                     parseTreeStack = java.util.Arrays.copyOf(parseTreeStack, newCap);
                     charStack = java.util.Arrays.copyOf(charStack, newCap);
+                    activatorStack = java.util.Arrays.copyOf(activatorStack, newCap);
+                    subInstanceStack = java.util.Arrays.copyOf(subInstanceStack, newCap);
                     stackCap = newCap;
                 }
 
@@ -232,6 +245,47 @@ public class PathParser {
                     continue;
                 }
 
+                // Check for APT sub-parse activator before regular start-handler invocation
+                SubParseActivator activator = findActivator(child);
+                if (activator != null) {
+                    // APT sub-parse: create sub-instance, bind sub-factory, switch tree
+                    Object subInstance = activator.instanceFactory().apply(activator.subType());
+                    PathParserFactory subFactory = activator.factoryLookup().apply(activator.subType());
+                    if (subFactory != null) {
+                        // Use bindFresh to get a fresh tree (not the shared static TREE)
+                        // to avoid accumulating invokers across repeated sub-parses.
+                        ParseNode freshSubTree = subFactory.bindFresh(subInstance, activator.instanceFactory(), activator.factoryLookup());
+                        // Push current context
+                        parseTreeStack[depth] = parseTree;
+                        activatorStack[depth] = activator;
+                        subInstanceStack[depth] = subInstance;
+                        // Switch to fresh sub-tree root
+                        parseTree = freshSubTree;
+                        depth++;
+                    } else {
+                        // No generated factory — fall back to reflection (same as CreateInstanceInvoker path)
+                        boolean usedSubParser = invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
+                        if (usedSubParser) {
+                            invokeEndHandlers(child, null);
+                            continue;
+                        }
+                        parseTreeStack[depth] = parseTree;
+                        activatorStack[depth] = null;
+                        subInstanceStack[depth] = null;
+                        if (child.needsText) {
+                            StringBuilder sb = charStack[depth];
+                            if (sb == null) {
+                                charStack[depth] = new StringBuilder(32);
+                            } else {
+                                sb.setLength(0);
+                            }
+                        }
+                        parseTree = child;
+                        depth++;
+                    }
+                    continue;
+                }
+
                 boolean usedSubParser = invokeStartHandlers(child, reader, attrCount, attrNames, attrValues);
 
                 if (usedSubParser) {
@@ -240,6 +294,8 @@ public class PathParser {
                 }
 
                 parseTreeStack[depth] = parseTree;
+                activatorStack[depth] = null;
+                subInstanceStack[depth] = null;
                 if (child.needsText) {
                     StringBuilder sb = charStack[depth];
                     if (sb == null) {
@@ -260,6 +316,18 @@ public class PathParser {
                     ignore--;
                     continue;
                 }
+
+                // Check if this end-element closes an APT sub-parse frame
+                SubParseActivator doneActivator = activatorStack[depth];
+                if (doneActivator != null) {
+                    // APT sub-parse finished: apply sub-instance to parent
+                    doneActivator.applyToParent().accept(subInstanceStack[depth]);
+                    activatorStack[depth] = null;
+                    subInstanceStack[depth] = null;
+                    parseTree = parseTreeStack[depth];
+                    continue;
+                }
+
                 StringBuilder text = parseTree.needsText ? charStack[depth] : null;
                 invokeEndHandlers(parseTree, text);
                 parseTree = parseTreeStack[depth];

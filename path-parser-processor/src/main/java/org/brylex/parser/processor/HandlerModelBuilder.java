@@ -57,6 +57,12 @@ public final class HandlerModelBuilder {
         return SUPPORTED_TYPES.contains(typeName);
     }
 
+    private boolean isSubHandlerCandidate(String typeName) {
+        return !isConvertibleFieldType(typeName)
+                && !typeName.equals("javax.xml.stream.events.StartElement")
+                && !typeName.equals("javax.xml.stream.events.EndElement");
+    }
+
     private static boolean isCollectionType(String typeName) {
         return typeName.startsWith("java.util.List")
                 || typeName.startsWith("java.util.Set")
@@ -90,13 +96,20 @@ public final class HandlerModelBuilder {
                     if (isConvertibleFieldType(elemType)) {
                         bindings.add(new Binding.Collection(pathValue, field, field.getSimpleName().toString(),
                                 fieldType, elemType));
+                    } else if (isSubHandlerCandidate(elemType)) {
+                        // Case C: collection of non-convertible element type → sub-handler collection
+                        bindings.add(new Binding.SubHandler(pathValue, field, field.getSimpleName().toString(),
+                                elemType, Binding.SubHandler.Kind.COLLECTION_FIELD, fieldType));
                     }
-                    // Non-convertible element type → Task 3.7 (sub-handler collection). Skip for now.
                     continue;
                 }
 
                 if (!isConvertibleFieldType(field)) {
-                    // Non-convertible types (generics, unknown types) are left for reflection.
+                    // Case B: non-convertible non-collection field → sub-handler field
+                    if (isSubHandlerCandidate(field.asType().toString())) {
+                        bindings.add(new Binding.SubHandler(pathValue, field, field.getSimpleName().toString(),
+                                field.asType().toString(), Binding.SubHandler.Kind.FIELD, null));
+                    }
                     continue;
                 }
                 if (lastSegment.startsWith("@")) {
@@ -128,7 +141,12 @@ public final class HandlerModelBuilder {
                     continue;
                 }
                 if (!isConvertibleFieldType(paramType)) {
-                    continue;   // 3.7
+                    // Case A: method with single param of non-convertible type → sub-handler method
+                    if (isSubHandlerCandidate(paramType)) {
+                        bindings.add(new Binding.SubHandler(pathValue, method, methodName,
+                                paramType, Binding.SubHandler.Kind.METHOD, null));
+                    }
+                    continue;
                 }
                 bindings.add(new Binding.MethodText(pathValue, method, methodName, paramType));
             }

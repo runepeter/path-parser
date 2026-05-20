@@ -266,6 +266,35 @@ public final class HandlerCodeGenerator {
                 } else {
                     buildTree.addStatement("$L.needsEndElement = true", parent);
                 }
+            } else if (b instanceof Binding.SubHandler sh) {
+                // Sub-handler: build path nodes (no needsText marking)
+                String[] segments = sh.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
+                    }
+                    parent = var;
+                }
+                // No needsText for sub-handler nodes
             }
         }
         buildTree.addStatement("return root");
@@ -442,9 +471,220 @@ public final class HandlerCodeGenerator {
                         ClassName.get("org.brylex.parser", "EventInvoker"),
                         kindEnum,
                         ev.methodName(), castType);
+            } else if (b instanceof Binding.SubHandler sh) {
+                String[] segments = sh.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String subType = sh.subHandlerType();
+                String applyFragment;
+                switch (sh.kind()) {
+                    case METHOD -> applyFragment = "h." + sh.targetName() + "((" + subType + ") inst)";
+                    case FIELD -> applyFragment = "h." + sh.targetName() + " = (" + subType + ") inst";
+                    case COLLECTION_FIELD -> {
+                        boolean isFinalField = sh.element().getModifiers()
+                                .contains(javax.lang.model.element.Modifier.FINAL);
+                        if (isFinalField) {
+                            applyFragment = "h." + sh.targetName() + ".add((" + subType + ") inst)";
+                        } else {
+                            applyFragment = "{ if (h." + sh.targetName() + " == null) h."
+                                    + sh.targetName() + " = " + collectionInitFor(sh.collectionType())
+                                    + "; h." + sh.targetName() + ".add((" + subType + ") inst); }";
+                        }
+                    }
+                    default -> throw new IllegalArgumentException("Unknown kind: " + sh.kind());
+                }
+                bind.addStatement("$L.startInvokers.add(new $T($L.class, subHandlerFactory, subFactoryLookup, inst -> $L))",
+                        lookup.toString(),
+                        ClassName.get("org.brylex.parser", "SubParseActivator"),
+                        subType,
+                        applyFragment);
             }
         }
         bind.addStatement("return new $T(handler, $T.of())", invokerSet, Map.class);
+
+        // bindFresh(...) — creates a new tree per call, for safe re-use in sub-handler contexts
+        MethodSpec.Builder bindFresh = MethodSpec.methodBuilder("bindFresh")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(parseNode)
+                .addParameter(Object.class, "handler")
+                .addParameter(ParameterSpec.builder(subHandlerFactoryType, "subHandlerFactory").build())
+                .addParameter(ParameterSpec.builder(subFactoryLookupType, "subFactoryLookup").build())
+                .addStatement("$T freshTree = buildTree()", parseNode)
+                .addStatement("$T h = ($T) handler", handlerClass, handlerClass);
+
+        for (Binding b : model.bindings()) {
+            if (b instanceof Binding.FieldText ft) {
+                String[] segments = ft.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                if ("java.lang.String".equals(ft.fieldType())) {
+                    bindFresh.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
+                            lookup.toString(), textInvoker, ft.fieldName());
+                } else {
+                    ClassName boxed = boxedClassName(ft);
+                    bindFresh.addStatement("$L.endInvokers.add(new $T(text -> h.$L = ($T) $T.convert(text, $T.class)))",
+                            lookup.toString(), textInvoker, ft.fieldName(), boxed, conversions, boxed);
+                }
+            } else if (b instanceof Binding.Attribute attr) {
+                String[] segments = attr.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                if ("java.lang.String".equals(attr.fieldType())) {
+                    bindFresh.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = value))",
+                            lookup.toString(), attributeBindingInvoker, attr.attrName(),
+                            attributeSnapshot, String.class, attr.fieldName());
+                } else {
+                    ClassName boxed = boxedClassNameForAttr(attr);
+                    bindFresh.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = ($T) $T.convert(value, $T.class)))",
+                            lookup.toString(), attributeBindingInvoker, attr.attrName(),
+                            attributeSnapshot, String.class, attr.fieldName(), boxed, conversions, boxed);
+                }
+            } else if (b instanceof Binding.Collection coll) {
+                String[] segments = coll.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String elemType = coll.elementType();
+                String boxedElem = boxedTypeLiteral(elemType);
+                String initExpr = collectionInitFor(coll.collectionType());
+                String addExpr = "java.lang.String".equals(elemType)
+                        ? "text"
+                        : "(" + boxedElem + ") org.brylex.parser.Conversions.convert(text, " + boxedElem + ".class)";
+                boolean isFinal = coll.element().getModifiers()
+                        .contains(javax.lang.model.element.Modifier.FINAL);
+                if (isFinal) {
+                    bindFresh.addStatement("$L.endInvokers.add(new $T(text -> { h.$L.add($L); }))",
+                            lookup.toString(), textInvoker, coll.fieldName(), addExpr);
+                } else {
+                    bindFresh.addStatement("$L.endInvokers.add(new $T(text -> { if (h.$L == null) h.$L = $L; h.$L.add($L); }))",
+                            lookup.toString(), textInvoker,
+                            coll.fieldName(), coll.fieldName(), initExpr, coll.fieldName(), addExpr);
+                }
+            } else if (b instanceof Binding.MethodText mt) {
+                String[] segments = mt.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String paramType = mt.paramType();
+                String boxedType = boxedTypeLiteral(paramType);
+                String callValue = "java.lang.String".equals(paramType)
+                        ? "text"
+                        : "(" + paramType + ") org.brylex.parser.Conversions.convert(text, " + boxedType + ".class)";
+                bindFresh.addStatement("$L.endInvokers.add(new $T(text -> h.$L($L)))",
+                        lookup.toString(), textInvoker, mt.methodName(), callValue);
+            } else if (b instanceof Binding.MethodEvent ev) {
+                String[] segments = ev.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                boolean isStart = ev.eventKind() == Binding.MethodEvent.EventKind.START;
+                String invokerList = isStart ? "startInvokers" : "endInvokers";
+                String kindEnum = isStart ? "START_ELEMENT" : "END_ELEMENT";
+                String castType = isStart
+                        ? "javax.xml.stream.events.StartElement"
+                        : "javax.xml.stream.events.EndElement";
+                bindFresh.addStatement("$L.$L.add(new $T($T.Kind.$L, arg -> h.$L(($L) arg)))",
+                        lookup.toString(), invokerList,
+                        ClassName.get("org.brylex.parser", "EventInvoker"),
+                        ClassName.get("org.brylex.parser", "EventInvoker"),
+                        kindEnum, ev.methodName(), castType);
+            } else if (b instanceof Binding.SubHandler sh) {
+                String[] segments = sh.path().split("/");
+                StringBuilder lookup = new StringBuilder("freshTree");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String subType = sh.subHandlerType();
+                String applyFragment;
+                switch (sh.kind()) {
+                    case METHOD -> applyFragment = "h." + sh.targetName() + "((" + subType + ") inst)";
+                    case FIELD -> applyFragment = "h." + sh.targetName() + " = (" + subType + ") inst";
+                    case COLLECTION_FIELD -> {
+                        boolean isFinalField = sh.element().getModifiers()
+                                .contains(javax.lang.model.element.Modifier.FINAL);
+                        if (isFinalField) {
+                            applyFragment = "h." + sh.targetName() + ".add((" + subType + ") inst)";
+                        } else {
+                            applyFragment = "{ if (h." + sh.targetName() + " == null) h."
+                                    + sh.targetName() + " = " + collectionInitFor(sh.collectionType())
+                                    + "; h." + sh.targetName() + ".add((" + subType + ") inst); }";
+                        }
+                    }
+                    default -> throw new IllegalArgumentException("Unknown kind: " + sh.kind());
+                }
+                bindFresh.addStatement("$L.startInvokers.add(new $T($L.class, subHandlerFactory, subFactoryLookup, inst -> $L))",
+                        lookup.toString(),
+                        ClassName.get("org.brylex.parser", "SubParseActivator"),
+                        subType, applyFragment);
+            }
+        }
+        bindFresh.addStatement("return freshTree");
 
         TypeSpec spec = TypeSpec.classBuilder(model.generatedClassName())
                 .addJavadoc("Generated by path-parser-processor — do not edit manually\n")
@@ -457,6 +697,7 @@ public final class HandlerCodeGenerator {
                 .addMethod(handlerTypeMethod)
                 .addMethod(treeMethod)
                 .addMethod(bind.build())
+                .addMethod(bindFresh.build())
                 .build();
 
         JavaFile.builder(model.packageName(), spec).build().writeTo(env.getFiler());
