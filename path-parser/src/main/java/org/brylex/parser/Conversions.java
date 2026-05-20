@@ -11,7 +11,7 @@ import java.util.UUID;
  * Konverterer tekst (typisk XML-elementinnhold eller attributtverdi) til
  * felt-/parametertypen. Returnerer null hvis ingen konvertering passer.
  */
-final class Conversions {
+public final class Conversions {
 
     private Conversions() {
     }
@@ -74,7 +74,7 @@ final class Conversions {
         return null;
     }
 
-    static Object convert(String text, Class<?> targetType) {
+    public static Object convert(String text, Class<?> targetType) {
         if (text == null) {
             return null;
         }

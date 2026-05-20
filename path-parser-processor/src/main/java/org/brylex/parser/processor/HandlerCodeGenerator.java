@@ -16,6 +16,41 @@ public final class HandlerCodeGenerator {
         this.env = env;
     }
 
+    /**
+     * Returns the boxed ClassName for a field type string.
+     * For primitives, returns the boxed java.lang type.
+     * For reference types, looks up the TypeElement via the processing environment
+     * so that JavaPoet handles nested-class notation correctly.
+     */
+    private ClassName boxedClassName(Binding.FieldText ft) {
+        String fieldType = ft.fieldType();
+        return switch (fieldType) {
+            case "int"     -> ClassName.get("java.lang", "Integer");
+            case "long"    -> ClassName.get("java.lang", "Long");
+            case "short"   -> ClassName.get("java.lang", "Short");
+            case "byte"    -> ClassName.get("java.lang", "Byte");
+            case "double"  -> ClassName.get("java.lang", "Double");
+            case "float"   -> ClassName.get("java.lang", "Float");
+            case "boolean" -> ClassName.get("java.lang", "Boolean");
+            case "char"    -> ClassName.get("java.lang", "Character");
+            default -> {
+                // Reference type — resolve via TypeElement so JavaPoet handles
+                // nested classes (e.g. OuterClass.InnerEnum) correctly.
+                var typeElem = (javax.lang.model.element.TypeElement)
+                        env.getTypeUtils().asElement(((javax.lang.model.element.VariableElement) ft.element()).asType());
+                if (typeElem != null) {
+                    yield ClassName.get(typeElem);
+                }
+                // Fallback: parse the FQ name (only for non-nested reference types)
+                int lastDot = fieldType.lastIndexOf('.');
+                if (lastDot < 0) {
+                    yield ClassName.get("", fieldType);
+                }
+                yield ClassName.get(fieldType.substring(0, lastDot), fieldType.substring(lastDot + 1));
+            }
+        };
+    }
+
     /** Convert an arbitrary path segment into a valid Java identifier fragment. */
     private static String toJavaIdent(String segment) {
         StringBuilder sb = new StringBuilder();
@@ -98,6 +133,7 @@ public final class HandlerCodeGenerator {
                 .addParameter(ParameterSpec.builder(subFactoryLookupType, "subFactoryLookup").build())
                 .addStatement("$T h = ($T) handler", handlerClass, handlerClass);
 
+        ClassName conversions = ClassName.get("org.brylex.parser", "Conversions");
         for (Binding b : model.bindings()) {
             if (!(b instanceof Binding.FieldText ft)) continue;
             String[] segments = ft.path().split("/");
@@ -106,8 +142,16 @@ public final class HandlerCodeGenerator {
                 if (segment.isEmpty()) continue;
                 lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
             }
-            bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
-                    lookup.toString(), textInvoker, ft.fieldName());
+            if ("java.lang.String".equals(ft.fieldType())) {
+                bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
+                        lookup.toString(), textInvoker, ft.fieldName());
+            } else {
+                // Determine the boxed ClassName for the cast — JavaPoet uses $T to emit the
+                // simple name and generate the appropriate import automatically.
+                ClassName boxed = boxedClassName(ft);
+                bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = ($T) $T.convert(text, $T.class)))",
+                        lookup.toString(), textInvoker, ft.fieldName(), boxed, conversions, boxed);
+            }
         }
         bind.addStatement("return new $T(handler, $T.of())", invokerSet, Map.class);
 
