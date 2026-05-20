@@ -23,7 +23,14 @@ public final class HandlerCodeGenerator {
      * so that JavaPoet handles nested-class notation correctly.
      */
     private ClassName boxedClassName(Binding.FieldText ft) {
-        String fieldType = ft.fieldType();
+        return boxedClassNameForType(ft.fieldType(), ft.element());
+    }
+
+    private ClassName boxedClassNameForAttr(Binding.Attribute attr) {
+        return boxedClassNameForType(attr.fieldType(), attr.element());
+    }
+
+    private ClassName boxedClassNameForType(String fieldType, javax.lang.model.element.Element element) {
         return switch (fieldType) {
             case "int"     -> ClassName.get("java.lang", "Integer");
             case "long"    -> ClassName.get("java.lang", "Long");
@@ -37,7 +44,7 @@ public final class HandlerCodeGenerator {
                 // Reference type — resolve via TypeElement so JavaPoet handles
                 // nested classes (e.g. OuterClass.InnerEnum) correctly.
                 var typeElem = (javax.lang.model.element.TypeElement)
-                        env.getTypeUtils().asElement(((javax.lang.model.element.VariableElement) ft.element()).asType());
+                        env.getTypeUtils().asElement(((javax.lang.model.element.VariableElement) element).asType());
                 if (typeElem != null) {
                     yield ClassName.get(typeElem);
                 }
@@ -80,21 +87,38 @@ public final class HandlerCodeGenerator {
 
         java.util.Set<String> declaredVars = new java.util.LinkedHashSet<>();
         for (Binding b : model.bindings()) {
-            if (!(b instanceof Binding.FieldText ft)) continue;
-            String[] segments = ft.path().split("/");
-            String parent = "root";
-            StringBuilder varName = new StringBuilder("n");
-            for (String segment : segments) {
-                if (segment.isEmpty()) continue;
-                varName.append("_").append(toJavaIdent(segment));
-                String var = varName.toString();
-                if (declaredVars.add(var)) {
-                    buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
-                            parseNode, var, parent, segment);
+            if (b instanceof Binding.FieldText ft) {
+                String[] segments = ft.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    varName.append("_").append(toJavaIdent(segment));
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                parseNode, var, parent, segment);
+                    }
+                    parent = var;
                 }
-                parent = var;
+                buildTree.addStatement("$L.needsText = true", parent);
+            } else if (b instanceof Binding.Attribute attr) {
+                // Build nodes for the parent path (the element that carries the attribute)
+                String[] segments = attr.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    varName.append("_").append(toJavaIdent(segment));
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                parseNode, var, parent, segment);
+                    }
+                    parent = var;
+                }
+                buildTree.addStatement("$L.needsStartElement = true", parent);
             }
-            buildTree.addStatement("$L.needsText = true", parent);
         }
         buildTree.addStatement("return root");
 
@@ -134,23 +158,44 @@ public final class HandlerCodeGenerator {
                 .addStatement("$T h = ($T) handler", handlerClass, handlerClass);
 
         ClassName conversions = ClassName.get("org.brylex.parser", "Conversions");
+        ClassName attributeBindingInvoker = ClassName.get("org.brylex.parser", "AttributeBindingInvoker");
+        ClassName attributeSnapshot = ClassName.get("org.brylex.parser", "AttributeSnapshot");
         for (Binding b : model.bindings()) {
-            if (!(b instanceof Binding.FieldText ft)) continue;
-            String[] segments = ft.path().split("/");
-            StringBuilder lookup = new StringBuilder("TREE");
-            for (String segment : segments) {
-                if (segment.isEmpty()) continue;
-                lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
-            }
-            if ("java.lang.String".equals(ft.fieldType())) {
-                bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
-                        lookup.toString(), textInvoker, ft.fieldName());
-            } else {
-                // Determine the boxed ClassName for the cast — JavaPoet uses $T to emit the
-                // simple name and generate the appropriate import automatically.
-                ClassName boxed = boxedClassName(ft);
-                bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = ($T) $T.convert(text, $T.class)))",
-                        lookup.toString(), textInvoker, ft.fieldName(), boxed, conversions, boxed);
+            if (b instanceof Binding.FieldText ft) {
+                String[] segments = ft.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
+                }
+                if ("java.lang.String".equals(ft.fieldType())) {
+                    bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = text))",
+                            lookup.toString(), textInvoker, ft.fieldName());
+                } else {
+                    // Determine the boxed ClassName for the cast — JavaPoet uses $T to emit the
+                    // simple name and generate the appropriate import automatically.
+                    ClassName boxed = boxedClassName(ft);
+                    bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L = ($T) $T.convert(text, $T.class)))",
+                            lookup.toString(), textInvoker, ft.fieldName(), boxed, conversions, boxed);
+                }
+            } else if (b instanceof Binding.Attribute attr) {
+                // Build lookup chain for the parent path (element that carries the attribute)
+                String[] segments = attr.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    lookup.append(".lookupChild(\"").append(segment).append("\", 0, null, null)");
+                }
+                if ("java.lang.String".equals(attr.fieldType())) {
+                    bind.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = value))",
+                            lookup.toString(), attributeBindingInvoker, attr.attrName(),
+                            attributeSnapshot, String.class, attr.fieldName());
+                } else {
+                    ClassName boxed = boxedClassNameForAttr(attr);
+                    bind.addStatement("$L.startInvokers.add(new $T($S, ($T snap, $T value) -> h.$L = ($T) $T.convert(value, $T.class)))",
+                            lookup.toString(), attributeBindingInvoker, attr.attrName(),
+                            attributeSnapshot, String.class, attr.fieldName(), boxed, conversions, boxed);
+                }
             }
         }
         bind.addStatement("return new $T(handler, $T.of())", invokerSet, Map.class);

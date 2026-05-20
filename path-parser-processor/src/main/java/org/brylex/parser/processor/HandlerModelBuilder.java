@@ -59,10 +59,21 @@ public final class HandlerModelBuilder {
             if (member.getKind() == ElementKind.FIELD) {
                 VariableElement field = (VariableElement) member;
                 String fieldType = field.asType().toString();
-                if (isConvertibleFieldType(field)) {
-                    bindings.add(new Binding.FieldText(path.value(), field, field.getSimpleName().toString(), fieldType));
+                if (!isConvertibleFieldType(field)) {
+                    // Non-convertible types (collections, generics, unknown types) are left for reflection.
+                    continue;
                 }
-                // Non-convertible types (collections, generics, unknown types) are left for reflection.
+                String pathValue = path.value();
+                int lastSlash = pathValue.lastIndexOf('/');
+                String lastSegment = pathValue.substring(lastSlash + 1);
+                if (lastSegment.startsWith("@")) {
+                    String parentPath = pathValue.substring(0, lastSlash);
+                    if (parentPath.isEmpty()) parentPath = "/";
+                    bindings.add(new Binding.Attribute(parentPath, field,
+                            field.getSimpleName().toString(), fieldType, lastSegment.substring(1)));
+                    continue;
+                }
+                bindings.add(new Binding.FieldText(pathValue, field, field.getSimpleName().toString(), fieldType));
             }
         }
         PackageElement pkg = env.getElementUtils().getPackageOf(type);

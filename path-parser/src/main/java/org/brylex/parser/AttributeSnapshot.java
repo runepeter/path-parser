@@ -7,7 +7,7 @@ package org.brylex.parser;
  * Holdes ikke pa tvers av invoke-kall; ny snapshot per START-element der det
  * finnes AttributeInvoker-er.
  */
-final class AttributeSnapshot {
+public final class AttributeSnapshot {
 
     final int count;
     final String[] names;
