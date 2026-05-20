@@ -206,6 +206,34 @@ public final class HandlerCodeGenerator {
                     parent = var;
                 }
                 buildTree.addStatement("$L.needsText = true", parent);
+            } else if (b instanceof Binding.MethodText mt) {
+                String[] segments = mt.path().split("/");
+                String parent = "root";
+                StringBuilder varName = new StringBuilder("n");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    String elemName = parsed[0];
+                    String filterName = parsed[1];
+                    String filterValue = parsed[2];
+                    varName.append("_").append(toJavaIdent(elemName));
+                    if (filterName != null) {
+                        varName.append("__").append(toJavaIdent(filterName))
+                               .append("_").append(toJavaIdent(filterValue));
+                    }
+                    String var = varName.toString();
+                    if (declaredVars.add(var)) {
+                        if (filterName == null) {
+                            buildTree.addStatement("$T $L = $L.addChild($S, null, null)",
+                                    parseNode, var, parent, elemName);
+                        } else {
+                            buildTree.addStatement("$T $L = $L.addChild($S, $S, $S)",
+                                    parseNode, var, parent, elemName, filterName, filterValue);
+                        }
+                    }
+                    parent = var;
+                }
+                buildTree.addStatement("$L.needsText = true", parent);
             }
         }
         buildTree.addStatement("return root");
@@ -333,6 +361,29 @@ public final class HandlerCodeGenerator {
                             coll.fieldName(), coll.fieldName(), initExpr,
                             coll.fieldName(), addExpr);
                 }
+            } else if (b instanceof Binding.MethodText mt) {
+                String[] segments = mt.path().split("/");
+                StringBuilder lookup = new StringBuilder("TREE");
+                for (String segment : segments) {
+                    if (segment.isEmpty()) continue;
+                    String[] parsed = parseSegment(segment);
+                    if (parsed[1] == null) {
+                        lookup.append(".lookupChild(\"").append(parsed[0]).append("\", 0, null, null)");
+                    } else {
+                        lookup.append(".lookupChildFiltered(\"").append(parsed[0])
+                              .append("\", \"").append(parsed[1])
+                              .append("\", \"").append(parsed[2]).append("\")");
+                    }
+                }
+                String paramType = mt.paramType();
+                String boxedType = boxedTypeLiteral(paramType);
+                String callValue = "java.lang.String".equals(paramType)
+                        ? "text"
+                        : "(" + paramType + ") org.brylex.parser.Conversions.convert(text, " + boxedType + ".class)";
+                bind.addStatement("$L.endInvokers.add(new $T(text -> h.$L($L)))",
+                        lookup.toString(),
+                        textInvoker,
+                        mt.methodName(), callValue);
             }
         }
         bind.addStatement("return new $T(handler, $T.of())", invokerSet, Map.class);

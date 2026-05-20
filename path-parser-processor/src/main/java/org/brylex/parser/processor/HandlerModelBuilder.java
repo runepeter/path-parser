@@ -5,6 +5,7 @@ import org.brylex.parser.annotation.Path;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
@@ -106,6 +107,24 @@ public final class HandlerModelBuilder {
                     continue;
                 }
                 bindings.add(new Binding.FieldText(pathValue, field, field.getSimpleName().toString(), fieldType));
+            } else if (member.getKind() == ElementKind.METHOD) {
+                ExecutableElement method = (ExecutableElement) member;
+                if (method.getParameters().size() != 1) continue;
+                VariableElement param = method.getParameters().get(0);
+                String paramType = param.asType().toString();
+                String methodName = method.getSimpleName().toString();
+                String pathValue = path.value();
+                // For Task 3.5: only handle convertible parameter types.
+                // StartElement/EndElement are handled in Task 3.6.
+                // Sub-handler types are handled in Task 3.7.
+                if (paramType.equals("javax.xml.stream.events.StartElement")
+                        || paramType.equals("javax.xml.stream.events.EndElement")) {
+                    continue;   // 3.6
+                }
+                if (!isConvertibleFieldType(paramType)) {
+                    continue;   // 3.7
+                }
+                bindings.add(new Binding.MethodText(pathValue, method, methodName, paramType));
             }
         }
         PackageElement pkg = env.getElementUtils().getPackageOf(type);
